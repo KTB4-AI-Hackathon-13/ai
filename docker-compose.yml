@@ -1,0 +1,10 @@
+# EC2 의 ~/app/docker-compose.yml 에 배치되는 예시.
+# CD 워크플로가 IMAGE_TAG(=github.sha) 를 넘겨주면 해당 태그 이미지를 pull/up 함.
+services:
+  ai:
+    image: 707071531352.dkr.ecr.ap-northeast-2.amazonaws.com/hackathon/ai:${IMAGE_TAG:-latest}
+    restart: always
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
