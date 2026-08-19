@@ -36,6 +36,24 @@ class SchedulePlan(BaseModel):
     daily_tasks: List[DailyTask]
 
 
+class PastGoalSummary(BaseModel):
+    category: Category
+    goal: str
+    period_days: int
+    completion_status: Literal["completed", "abandoned", "in_progress"]
+
+
+class LongTermContext(BaseModel):
+    """BE가 사용자 DB를 정제해 전달하는 과거 목표/선호 요약. AI 서비스는 저장하지 않고
+    매 /plan/generate 요청마다 그대로 전달받아 프롬프트에만 반영한다."""
+
+    past_goals: List[PastGoalSummary] = Field(default_factory=list)
+    preferences: List[str] = Field(
+        default_factory=list,
+        description="누적된 선호/제약 자유 텍스트 (예: '아침엔 시간 없음', '헬스장 장비 없음')",
+    )
+
+
 class PlanGenerateRequest(BaseModel):
     conversation_id: str = Field(..., description="이 대화를 식별하는 BE 쪽 ID")
     schedule_id: str = Field(..., description="이 계획이 귀속될 BE 쪽 schedule ID (확정 시 전송에 사용)")
@@ -49,6 +67,10 @@ class PlanGenerateRequest(BaseModel):
     busy_dates: List[BusyDate] = Field(
         default_factory=list,
         description="BE가 사용자 캘린더를 스캔해 전처리한 기존 일정(참고용)",
+    )
+    long_term_context: Optional[LongTermContext] = Field(
+        None,
+        description="BE가 정제해 전달하는 이 사용자의 과거 목표/선호 이력. 첫 목표라면 생략 가능",
     )
 
 

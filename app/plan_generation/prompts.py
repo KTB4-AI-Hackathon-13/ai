@@ -29,6 +29,11 @@ PLAN_GENERATE_SYSTEM = """\
    설정한다.
 6. user_confirmed는 항상 false로 설정한다 — 아직 계획을 처음 보여주는 단계라 사용자가
    확정 의사를 밝힐 수 없다.
+7. long_term_context가 주어지면 past_goals의 완료 패턴(예: 자주 중도 포기했는지, 완주했는지)과
+   preferences를 계획의 난이도/구성에 반영한다. 예를 들어 과거에 고강도 계획을 자주 포기했다면
+   이번엔 더 가볍게 시작하고, preferences에 누적된 제약은 별다른 언급이 없어도 계속 지킨다.
+   long_term_context가 없거나 past_goals/preferences가 모두 비어있으면 무시하고 기존 방식대로
+   진행한다.
 """
 
 PLAN_REVISE_SYSTEM = """\

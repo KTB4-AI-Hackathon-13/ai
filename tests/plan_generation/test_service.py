@@ -3,6 +3,8 @@ import pytest
 
 from app.plan_generation import service
 from app.plan_generation.schemas import (
+    LongTermContext,
+    PastGoalSummary,
     PlanConfirmRequest,
     PlanGenerateRequest,
     PlanReviseRequest,
@@ -88,6 +90,72 @@ class TestGeneratePlan:
         assert len(result.plan.daily_tasks) == 1
         assert result.ready_to_confirm is True
         assert [role for _, role, _ in notified] == ["user", "assistant"]
+
+    def test_long_term_context_defaults_to_none(self, monkeypatch):
+        fake_response = {
+            "assistant_message": "10일짜리 운동 계획을 만들었어요.",
+            "summary": "가벼운 근력 운동 10일 플랜",
+            "daily_tasks": [],
+            "ready_to_confirm": True,
+            "user_confirmed": False,
+        }
+        captured = {}
+        monkeypatch.setattr(
+            service,
+            "generate_structured",
+            lambda **kwargs: captured.update(kwargs) or fake_response,
+        )
+        monkeypatch.setattr(service.be_client, "notify_conversation", lambda *a, **k: None)
+
+        req = PlanGenerateRequest(
+            conversation_id="conv-1",
+            schedule_id="sched-1",
+            goal="근육을 만들고 싶어",
+            category="운동",
+            template_answers=_template_answers(),
+        )
+        service.generate_plan(req)
+
+        assert '"long_term_context":null' in captured["user_content"].replace(" ", "")
+
+    def test_long_term_context_is_passed_to_llm(self, monkeypatch):
+        fake_response = {
+            "assistant_message": "10일짜리 운동 계획을 만들었어요.",
+            "summary": "가벼운 근력 운동 10일 플랜",
+            "daily_tasks": [],
+            "ready_to_confirm": True,
+            "user_confirmed": False,
+        }
+        captured = {}
+        monkeypatch.setattr(
+            service,
+            "generate_structured",
+            lambda **kwargs: captured.update(kwargs) or fake_response,
+        )
+        monkeypatch.setattr(service.be_client, "notify_conversation", lambda *a, **k: None)
+
+        req = PlanGenerateRequest(
+            conversation_id="conv-1",
+            schedule_id="sched-1",
+            goal="근육을 만들고 싶어",
+            category="운동",
+            template_answers=_template_answers(),
+            long_term_context=LongTermContext(
+                past_goals=[
+                    PastGoalSummary(
+                        category="운동",
+                        goal="10km 마라톤 완주",
+                        period_days=30,
+                        completion_status="abandoned",
+                    )
+                ],
+                preferences=["아침엔 시간 없음"],
+            ),
+        )
+        service.generate_plan(req)
+
+        assert "마라톤" in captured["user_content"]
+        assert "아침엔 시간 없음" in captured["user_content"]
 
 
 class TestRevisePlan:
