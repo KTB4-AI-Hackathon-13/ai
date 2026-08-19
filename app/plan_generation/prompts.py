@@ -27,6 +27,8 @@ PLAN_GENERATE_SYSTEM = """\
 5. ready_to_confirm은 이 계획이 사용자 요청을 무리 없이 반영했다고 판단되면 true, 기간이
    빠듯해서 과제를 다 못 담았거나 애매한 부분이 있어 사용자 확인이 꼭 필요하면 false로
    설정한다.
+6. user_confirmed는 항상 false로 설정한다 — 아직 계획을 처음 보여주는 단계라 사용자가
+   확정 의사를 밝힐 수 없다.
 """
 
 PLAN_REVISE_SYSTEM = """\
@@ -50,4 +52,9 @@ PLAN_REVISE_SYSTEM = """\
    되묻는다.
 5. ready_to_confirm은 이번 수정으로 사용자 요청이 충분히 반영되어 바로 확정해도 될 것
    같으면 true, 아직 조율할 부분이 남아있으면 false로 설정한다.
+6. user_message가 계획에 대한 수정/피드백이 아니라 "이대로 확정할게요", "좋아요 이걸로
+   할게요", "네 진행해주세요" 같은 명확한 승인/확정 의사표시라면 user_confirmed를 true로
+   설정한다. 조금이라도 수정 요청이 섞여 있거나("이대로 좋은데 마지막날만 빼줘") 의도가
+   불명확하면 false로 설정한다. user_confirmed가 true일 때 summary/daily_tasks는
+   current_plan과 동일하게 그대로 반환한다(변경하지 않는다).
 """

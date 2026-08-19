@@ -38,6 +38,7 @@ class SchedulePlan(BaseModel):
 
 class PlanGenerateRequest(BaseModel):
     conversation_id: str = Field(..., description="이 대화를 식별하는 BE 쪽 ID")
+    schedule_id: str = Field(..., description="이 계획이 귀속될 BE 쪽 schedule ID (확정 시 전송에 사용)")
     goal: str
     category: Category
     template_answers: dict = Field(
@@ -53,6 +54,7 @@ class PlanGenerateRequest(BaseModel):
 
 class PlanReviseRequest(BaseModel):
     conversation_id: str
+    schedule_id: str = Field(..., description="이 계획이 귀속될 BE 쪽 schedule ID (확정 시 전송에 사용)")
     goal: str
     category: Category
     template_answers: dict
@@ -68,6 +70,10 @@ class PlanTurnResponse(BaseModel):
     plan: SchedulePlan
     ready_to_confirm: bool = Field(
         ..., description="AI 판단으로 이 계획이 바로 확정해도 될 만큼 안정적인지 여부(참고용 신호)"
+    )
+    confirmed: bool = Field(False, description="이번 턴에 사용자가 확정 의사를 밝혔는지 여부")
+    submitted: Optional[bool] = Field(
+        None, description="confirmed=True일 때만 의미 있음 — BE로 최종 계획 전송이 성공했는지 여부"
     )
 
 
@@ -105,7 +111,8 @@ PLAN_TURN_JSON_SCHEMA = {
         "summary": {"type": "string"},
         "daily_tasks": {"type": "array", "items": _DAILY_TASK_SCHEMA},
         "ready_to_confirm": {"type": "boolean"},
+        "user_confirmed": {"type": "boolean"},
     },
-    "required": ["assistant_message", "summary", "daily_tasks", "ready_to_confirm"],
+    "required": ["assistant_message", "summary", "daily_tasks", "ready_to_confirm", "user_confirmed"],
     "additionalProperties": False,
 }

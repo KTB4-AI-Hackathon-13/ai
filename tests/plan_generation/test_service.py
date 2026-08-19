@@ -1,3 +1,4 @@
+import httpx
 import pytest
 
 from app.plan_generation import service
@@ -42,6 +43,7 @@ class TestGeneratePlan:
     def test_rejects_missing_date_range(self):
         req = PlanGenerateRequest(
             conversation_id="conv-1",
+            schedule_id="sched-1",
             goal="근육을 만들고 싶어",
             category="운동",
             template_answers={"experience": "beginner"},
@@ -62,6 +64,7 @@ class TestGeneratePlan:
                 }
             ],
             "ready_to_confirm": True,
+            "user_confirmed": False,
         }
         monkeypatch.setattr(service, "generate_structured", lambda **kwargs: fake_response)
         notified = []
@@ -73,6 +76,7 @@ class TestGeneratePlan:
 
         req = PlanGenerateRequest(
             conversation_id="conv-1",
+            schedule_id="sched-1",
             goal="근육을 만들고 싶어",
             category="운동",
             template_answers=_template_answers(),
@@ -93,12 +97,14 @@ class TestRevisePlan:
             "summary": "주중 위주 근력 운동 플랜",
             "daily_tasks": [],
             "ready_to_confirm": False,
+            "user_confirmed": False,
         }
         monkeypatch.setattr(service, "generate_structured", lambda **kwargs: fake_response)
         monkeypatch.setattr(service.be_client, "notify_conversation", lambda *a, **k: None)
 
         req = PlanReviseRequest(
             conversation_id="conv-1",
+            schedule_id="sched-1",
             goal="근육을 만들고 싶어",
             category="운동",
             template_answers=_template_answers(),
@@ -108,7 +114,73 @@ class TestRevisePlan:
         result = service.revise_plan(req)
 
         assert result.ready_to_confirm is False
+        assert result.confirmed is False
+        assert result.submitted is None
         assert result.plan.summary == fake_response["summary"]
+
+    def test_user_confirmed_submits_current_plan_to_be(self, monkeypatch):
+        fake_response = {
+            "assistant_message": "이건 무시돼야 함",
+            "summary": "이것도 무시돼야 함",
+            "daily_tasks": [],
+            "ready_to_confirm": True,
+            "user_confirmed": True,
+        }
+        monkeypatch.setattr(service, "generate_structured", lambda **kwargs: fake_response)
+        monkeypatch.setattr(service.be_client, "notify_conversation", lambda *a, **k: None)
+        submitted = []
+        monkeypatch.setattr(
+            service.be_client,
+            "submit_final_plan",
+            lambda schedule_id, plan: submitted.append((schedule_id, plan)),
+        )
+
+        current_plan = SchedulePlan(summary="기존 플랜", daily_tasks=[])
+        req = PlanReviseRequest(
+            conversation_id="conv-1",
+            schedule_id="sched-1",
+            goal="근육을 만들고 싶어",
+            category="운동",
+            template_answers=_template_answers(),
+            current_plan=current_plan,
+            user_message="네 이걸로 확정할게요",
+        )
+        result = service.revise_plan(req)
+
+        assert result.confirmed is True
+        assert result.submitted is True
+        assert result.plan == current_plan
+        assert submitted == [("sched-1", current_plan.model_dump())]
+
+    def test_user_confirmed_but_be_submission_fails_does_not_raise(self, monkeypatch):
+        fake_response = {
+            "assistant_message": "이건 무시돼야 함",
+            "summary": "이것도 무시돼야 함",
+            "daily_tasks": [],
+            "ready_to_confirm": True,
+            "user_confirmed": True,
+        }
+        monkeypatch.setattr(service, "generate_structured", lambda **kwargs: fake_response)
+        monkeypatch.setattr(service.be_client, "notify_conversation", lambda *a, **k: None)
+
+        def _raise(*args, **kwargs):
+            raise httpx.HTTPError("boom")
+
+        monkeypatch.setattr(service.be_client, "submit_final_plan", _raise)
+
+        req = PlanReviseRequest(
+            conversation_id="conv-1",
+            schedule_id="sched-1",
+            goal="근육을 만들고 싶어",
+            category="운동",
+            template_answers=_template_answers(),
+            current_plan=SchedulePlan(summary="기존 플랜", daily_tasks=[]),
+            user_message="네 이걸로 확정할게요",
+        )
+        result = service.revise_plan(req)
+
+        assert result.confirmed is True
+        assert result.submitted is False
 
 
 class TestConfirmPlan:
