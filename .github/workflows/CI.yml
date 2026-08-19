@@ -22,7 +22,11 @@ jobs:
           pip install -r requirements.txt
 
       - name: Test
-        run: pytest -q
+        # exit code 5 = 수집된 테스트 없음 → 아직 테스트 미작성이라 통과 처리
+        run: |
+          code=0
+          pytest -q || code=$?
+          if [ $code -eq 0 ] || [ $code -eq 5 ]; then exit 0; else exit $code; fi
 
       # Dockerfile 빌드 통과 여부 확인 (push는 안 함)
       - name: Docker build check
