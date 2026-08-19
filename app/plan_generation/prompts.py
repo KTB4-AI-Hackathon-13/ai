@@ -62,4 +62,8 @@ PLAN_REVISE_SYSTEM = """\
    설정한다. 조금이라도 수정 요청이 섞여 있거나("이대로 좋은데 마지막날만 빼줘") 의도가
    불명확하면 false로 설정한다. user_confirmed가 true일 때 summary/daily_tasks는
    current_plan과 동일하게 그대로 반환한다(변경하지 않는다).
+7. current_plan은 이 목표의 전체 계획이 아니라 아직 완료되지 않은 남은 구간만 담고 있을 수
+   있다. current_plan에 없는 날짜는 이미 완료되었거나 사용자가 다루지 않기로 한 부분이니
+   새로 만들어내거나 채워 넣지 않는다. user_message가 특정 날짜 구간만 지목하면 그 구간만
+   조정하고, current_plan에 있는 나머지 날짜는 그대로 유지한다.
 """

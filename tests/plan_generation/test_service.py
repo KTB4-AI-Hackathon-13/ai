@@ -186,6 +186,48 @@ class TestRevisePlan:
         assert result.submitted is None
         assert result.plan.summary == fake_response["summary"]
 
+    def test_partial_current_plan_covering_only_remaining_days(self, monkeypatch):
+        """current_plan이 목표 전체가 아니라 아직 완료되지 않은 남은 구간(11~30일차)만
+        담고 있어도 기존 로직이 에러 없이 그대로 동작하는지 확인한다."""
+        fake_response = {
+            "assistant_message": "11~20일차를 더 가볍게 다시 짰어요.",
+            "summary": "남은 구간 재조정 플랜",
+            "daily_tasks": [
+                {
+                    "scheduled_date": "2026-08-30",
+                    "title": "가벼운 유산소",
+                    "description": "조깅 20분",
+                    "estimated_min": 20,
+                }
+            ],
+            "ready_to_confirm": True,
+            "user_confirmed": False,
+        }
+        monkeypatch.setattr(service, "generate_structured", lambda **kwargs: fake_response)
+        monkeypatch.setattr(service.be_client, "notify_conversation", lambda *a, **k: None)
+
+        remaining_tasks = [
+            {
+                "scheduled_date": "2026-08-30",
+                "title": "하체 운동",
+                "description": "스쿼트 3세트 x 12회",
+                "estimated_min": 30,
+            }
+        ]
+        req = PlanReviseRequest(
+            conversation_id="conv-1",
+            schedule_id="sched-1",
+            goal="근육을 만들고 싶어",
+            category="운동",
+            template_answers=_template_answers(start_date="2026-08-01", end_date="2026-08-30"),
+            current_plan=SchedulePlan(summary="남은 구간 플랜", daily_tasks=remaining_tasks),
+            user_message="11일부터 20일까지만 좀 가볍게 다시 짜줘",
+        )
+        result = service.revise_plan(req)
+
+        assert result.plan.summary == fake_response["summary"]
+        assert result.confirmed is False
+
     def test_user_confirmed_submits_current_plan_to_be(self, monkeypatch):
         fake_response = {
             "assistant_message": "이건 무시돼야 함",
