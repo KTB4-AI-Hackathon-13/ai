@@ -107,6 +107,60 @@ class PlanConfirmResponse(BaseModel):
     schedule_id: str
 
 
+class RescheduleTask(BaseModel):
+    """FE/BE가 넘겨주는, 이 스케줄(목표)에 이미 있는 태스크 원본 한 건 — 완료/미완료 전체.
+    BE의 schedule_items.id는 숫자라 그대로 int로 받는다."""
+
+    id: int = Field(..., description="BE 쪽 태스크 id (schedule_items.id)")
+    scheduled_date: str = Field(..., description="YYYY-MM-DD")
+    title: str
+    description: str
+    estimated_min: int
+    completed: bool = Field(
+        ..., description="완료 여부(BE의 completedAt != null과 동일). true면 AI는 이 태스크를 "
+        "절대 수정 대상으로 삼지 않는다 — 문맥 파악용으로만 참고한다."
+    )
+
+
+class RescheduledTaskUpdate(BaseModel):
+    """이번 요청으로 실제로 내용이 바뀐 태스크 한 건. 응답엔 바뀐 것만 담긴다."""
+
+    id: int = Field(..., description="RescheduleTask 중 어떤 태스크를 수정한 것인지(기존 id 그대로)")
+    scheduled_date: str = Field(..., description="YYYY-MM-DD. 새로 배치된 날짜")
+    title: str
+    description: str
+    estimated_min: int
+
+
+class PlanRescheduleRequest(BaseModel):
+    """이미 확정되어 캘린더에 올라간 계획을 사용자가 다시 수정하고 싶을 때 쓰는 단일 요청.
+    /plan/revise와 달리 대화가 아니라 한 번의 요청으로 바로 반영까지 끝낸다. 전체 계획을
+    통째로 교체하지 않고, 완료되지 않은(completed=false) 태스크 중 실제로 바뀐 것만 찾아내
+    그 변경분만 BE로 전송한다."""
+
+    conversation_id: str = Field(..., description="이 대화를 식별하는 BE 쪽 ID")
+    schedule_id: str = Field(..., description="수정할 대상 계획이 귀속된 BE 쪽 schedule ID")
+    goal_summary: str
+    category: str = Field(..., min_length=1)
+    template_answers: dict
+    tasks: List[RescheduleTask] = Field(
+        ...,
+        description="이 스케줄(목표 하나)에 속한 전체 태스크(완료 + 미완료). 완료된 태스크도 "
+        "문맥 파악을 위해 함께 보내되, AI는 completed=false인 것만 수정 대상으로 삼는다.",
+    )
+    user_message: str = Field(..., description="캘린더에 반영할 수정 요청 자유 텍스트")
+
+
+class PlanRescheduleResponse(BaseModel):
+    assistant_message: str = Field(..., description="사용자에게 그대로 보여줄 챗봇 응답 텍스트")
+    updated_tasks: List[RescheduledTaskUpdate] = Field(
+        default_factory=list,
+        description="이번 요청으로 실제로 바뀐 태스크만 담긴다(diff). 바뀐 게 없으면 빈 배열.",
+    )
+    submitted: bool = Field(..., description="변경분을 BE로 전송했고 성공했는지 여부. updated_tasks가 "
+        "비어 있으면 전송 자체가 필요 없으므로 true.")
+
+
 # ── strict structured output용 raw JSON Schema ──────────────────────
 # Groq/Cerebras/Gemini의 strict 모드는 "모든 프로퍼티가 required + 선택 필드는 nullable
 # union"이어야 하므로 Pydantic의 model_json_schema() 기본 출력을 그대로 못 쓰고 직접 정의한다.
@@ -133,5 +187,28 @@ PLAN_TURN_JSON_SCHEMA = {
         "user_confirmed": {"type": "boolean"},
     },
     "required": ["assistant_message", "summary", "daily_tasks", "ready_to_confirm", "user_confirmed"],
+    "additionalProperties": False,
+}
+
+_RESCHEDULED_TASK_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "id": {"type": "integer"},
+        "scheduled_date": {"type": "string"},
+        "title": {"type": "string"},
+        "description": {"type": "string"},
+        "estimated_min": {"type": "integer"},
+    },
+    "required": ["id", "scheduled_date", "title", "description", "estimated_min"],
+    "additionalProperties": False,
+}
+
+PLAN_RESCHEDULE_JSON_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "assistant_message": {"type": "string"},
+        "updated_tasks": {"type": "array", "items": _RESCHEDULED_TASK_SCHEMA},
+    },
+    "required": ["assistant_message", "updated_tasks"],
     "additionalProperties": False,
 }

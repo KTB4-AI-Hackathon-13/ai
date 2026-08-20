@@ -6,13 +6,16 @@ from datetime import date
 import httpx
 
 from app.plan_generation import be_client
-from app.plan_generation.prompts import PLAN_GENERATE_SYSTEM, PLAN_REVISE_SYSTEM
+from app.plan_generation.prompts import PLAN_GENERATE_SYSTEM, PLAN_RESCHEDULE_SYSTEM, PLAN_REVISE_SYSTEM
 from app.plan_generation.providers import generate_structured
 from app.plan_generation.schemas import (
+    PLAN_RESCHEDULE_JSON_SCHEMA,
     PLAN_TURN_JSON_SCHEMA,
     PlanConfirmRequest,
     PlanConfirmResponse,
     PlanGenerateRequest,
+    PlanRescheduleRequest,
+    PlanRescheduleResponse,
     PlanReviseRequest,
     PlanTurnResponse,
     SchedulePlan,
@@ -169,3 +172,52 @@ def _try_submit_final_plan(schedule_id: str, plan: SchedulePlan) -> bool:
 def confirm_plan(req: PlanConfirmRequest) -> PlanConfirmResponse:
     be_client.submit_final_plan(req.schedule_id, req.plan.model_dump())
     return PlanConfirmResponse(submitted=True, schedule_id=req.schedule_id)
+
+
+def _try_update_scheduled_tasks(schedule_id: str, tasks: list[dict]) -> bool:
+    try:
+        be_client.update_scheduled_tasks(schedule_id, tasks)
+        return True
+    except httpx.HTTPError as exc:
+        logger.warning("변경된 태스크 BE 전송 실패(대화는 계속 진행): %s", exc)
+        return False
+
+
+def reschedule_plan(req: PlanRescheduleRequest) -> PlanRescheduleResponse:
+    """이미 캘린더에 있는 태스크 중 completed=false인 것만 대화 없이 한 번에 수정해,
+    실제로 바뀐 것만 BE에 반영한다(전체 계획을 다시 보내지 않는다)."""
+    _require_date_range(req.template_answers)
+
+    data = generate_structured(
+        system_prompt=PLAN_RESCHEDULE_SYSTEM,
+        user_content=req.model_dump_json(exclude={"conversation_id", "schedule_id"}),
+        json_schema=PLAN_RESCHEDULE_JSON_SCHEMA,
+        schema_name="plan_reschedule",
+    )
+
+    be_client.notify_conversation(req.conversation_id, role="user", content=req.user_message)
+
+    updated_by_id = {task["id"]: task for task in data["updated_tasks"]}
+    effective_dates = [
+        {"scheduled_date": updated_by_id[task.id]["scheduled_date"] if task.id in updated_by_id else task.scheduled_date}
+        for task in req.tasks
+        if not task.completed
+    ]
+    revised_days = _revised_duration_days(req.template_answers["start_date"], effective_dates)
+    if revised_days is not None and revised_days > MAX_PLAN_DURATION_DAYS:
+        message = _plan_duration_exceeded_after_revise_message(revised_days)
+        be_client.notify_conversation(req.conversation_id, role="assistant", content=message)
+        return PlanRescheduleResponse(assistant_message=message, updated_tasks=[], submitted=False)
+
+    submitted = _try_update_scheduled_tasks(req.schedule_id, data["updated_tasks"])
+    assistant_message = (
+        data["assistant_message"]
+        if submitted
+        else "계획을 수정했는데 캘린더 반영 중 문제가 생겼어요. 잠시 후 다시 시도해주세요."
+    )
+    be_client.notify_conversation(req.conversation_id, role="assistant", content=assistant_message)
+    return PlanRescheduleResponse(
+        assistant_message=assistant_message,
+        updated_tasks=data["updated_tasks"],
+        submitted=submitted,
+    )
