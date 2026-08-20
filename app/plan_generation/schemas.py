@@ -25,7 +25,7 @@ class DailyTask(BaseModel):
     scheduled_date: str = Field(..., description="YYYY-MM-DD. 이 작업을 배치한 실제 날짜")
     title: str
     description: str
-    estimated_min: int
+    estimated_min: int = Field(..., ge=1, description="소요 시간(분). 0은 허용하지 않는다.")
 
 
 class SchedulePlan(BaseModel):
@@ -86,13 +86,14 @@ class PlanTurnResponse(BaseModel):
     """generate/revise 공통 응답 — 챗봇 말풍선에 보여줄 메시지와 갱신된 계획을 함께 반환한다."""
 
     assistant_message: str = Field(..., description="사용자에게 그대로 보여줄 챗봇 응답 텍스트")
+    category: str = Field(..., description="이 계획이 속한 카테고리. 요청받은 값을 그대로 반환한다 (AI가 새로 판단하지 않음).")
     plan: SchedulePlan
     ready_to_confirm: bool = Field(
         ..., description="AI 판단으로 이 계획이 바로 확정해도 될 만큼 안정적인지 여부(참고용 신호)"
     )
     confirmed: bool = Field(False, description="이번 턴에 사용자가 확정 의사를 밝혔는지 여부")
     submitted: Optional[bool] = Field(
-        None, description="confirmed=True일 때만 의미 있음 — BE로 최종 계획 전송이 성공했는지 여부"
+        None, description="[C안 이후 미사용] AI가 더 이상 BE로 저장을 시도하지 않아 항상 None"
     )
 
 
@@ -117,7 +118,7 @@ _DAILY_TASK_SCHEMA = {
         "scheduled_date": {"type": "string"},
         "title": {"type": "string"},
         "description": {"type": "string"},
-        "estimated_min": {"type": "integer"},
+        "estimated_min": {"type": "integer", "minimum": 1},
     },
     "required": ["scheduled_date", "title", "description", "estimated_min"],
     "additionalProperties": False,

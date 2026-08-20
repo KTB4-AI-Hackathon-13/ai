@@ -1,11 +1,16 @@
-"""jena 담당 — plan_generation 비즈니스 로직. router.py는 이 모듈의 함수만 호출한다."""
+"""jena 담당 — plan_generation 비즈니스 로직. router.py는 이 모듈의 함수만 호출한다.
+
+[C안 반영] AI는 백엔드로 어떤 아웃바운드 호출도 하지 않는다. 대화 로그 저장과 계획
+확정 저장 모두 백엔드가 이 응답을 받은 뒤 자기 쪽에서 직접 처리한다.
+
+[category 추가] 응답(PlanTurnResponse)에 category를 포함시켰다. AI가 새로 판단하는
+게 아니라, 요청으로 받은 category 값을 그대로 돌려주는 것뿐이라 LLM 호출/프롬프트는
+안 건드려도 된다.
+"""
 
 import logging
 from datetime import date
 
-import httpx
-
-from app.plan_generation import be_client
 from app.plan_generation.prompts import PLAN_GENERATE_SYSTEM, PLAN_REVISE_SYSTEM
 from app.plan_generation.providers import generate_structured
 from app.plan_generation.schemas import (
@@ -75,10 +80,11 @@ def _revised_duration_days(start_date: str, daily_tasks: list[dict]) -> int | No
     return _days_between_inclusive(start_date, latest)
 
 
-def _turn_result_to_response(data: dict) -> PlanTurnResponse:
+def _turn_result_to_response(data: dict, category: str) -> PlanTurnResponse:
     plan = SchedulePlan(summary=data["summary"], daily_tasks=data["daily_tasks"])
     return PlanTurnResponse(
         assistant_message=data["assistant_message"],
+        category=category,
         plan=plan,
         ready_to_confirm=data["ready_to_confirm"],
     )
@@ -92,10 +98,9 @@ def generate_plan(req: PlanGenerateRequest) -> PlanTurnResponse:
     )
     if days > MAX_PLAN_DURATION_DAYS:
         message = _plan_duration_exceeded_message(days)
-        be_client.notify_conversation(req.conversation_id, role="user", content=req.goal_summary)
-        be_client.notify_conversation(req.conversation_id, role="assistant", content=message)
         return PlanTurnResponse(
             assistant_message=message,
+            category=req.category,
             plan=SchedulePlan(summary="", daily_tasks=[]),
             ready_to_confirm=False,
         )
@@ -107,10 +112,7 @@ def generate_plan(req: PlanGenerateRequest) -> PlanTurnResponse:
         schema_name="plan_turn",
     )
 
-    result = _turn_result_to_response(data)
-    be_client.notify_conversation(req.conversation_id, role="user", content=req.goal_summary)
-    be_client.notify_conversation(req.conversation_id, role="assistant", content=result.assistant_message)
-    return result
+    return _turn_result_to_response(data, req.category)
 
 
 def revise_plan(req: PlanReviseRequest) -> PlanTurnResponse:
@@ -123,49 +125,31 @@ def revise_plan(req: PlanReviseRequest) -> PlanTurnResponse:
         schema_name="plan_turn",
     )
 
-    be_client.notify_conversation(req.conversation_id, role="user", content=req.user_message)
-
     revised_days = _revised_duration_days(req.template_answers["start_date"], data["daily_tasks"])
     if revised_days is not None and revised_days > MAX_PLAN_DURATION_DAYS:
         message = _plan_duration_exceeded_after_revise_message(revised_days)
-        be_client.notify_conversation(req.conversation_id, role="assistant", content=message)
         return PlanTurnResponse(
             assistant_message=message,
+            category=req.category,
             plan=req.current_plan,
             ready_to_confirm=False,
             confirmed=False,
         )
 
     if data["user_confirmed"]:
-        submitted = _try_submit_final_plan(req.schedule_id, req.current_plan)
-        assistant_message = (
-            "네, 이 계획으로 확정할게요!"
-            if submitted
-            else "계획 확정 요청을 받았는데 저장 중 문제가 생겼어요. 잠시 후 다시 시도해주세요."
-        )
-        be_client.notify_conversation(req.conversation_id, role="assistant", content=assistant_message)
         return PlanTurnResponse(
-            assistant_message=assistant_message,
+            assistant_message="네, 이 계획으로 확정할게요!",
+            category=req.category,
             plan=req.current_plan,
             ready_to_confirm=True,
             confirmed=True,
-            submitted=submitted,
         )
 
-    result = _turn_result_to_response(data)
-    be_client.notify_conversation(req.conversation_id, role="assistant", content=result.assistant_message)
-    return result
-
-
-def _try_submit_final_plan(schedule_id: str, plan: SchedulePlan) -> bool:
-    try:
-        be_client.submit_final_plan(schedule_id, plan.model_dump())
-        return True
-    except httpx.HTTPError as exc:
-        logger.warning("확정 계획 BE 전송 실패(대화는 계속 진행): %s", exc)
-        return False
+    return _turn_result_to_response(data, req.category)
 
 
 def confirm_plan(req: PlanConfirmRequest) -> PlanConfirmResponse:
-    be_client.submit_final_plan(req.schedule_id, req.plan.model_dump())
+    """[사실상 불필요] BE는 이미 /plan/revise 응답에서 최종 plan을 갖고 있으므로
+    이 엔드포인트를 다시 호출할 이유가 없다. 팀 논의 후 삭제 여부 결정.
+    """
     return PlanConfirmResponse(submitted=True, schedule_id=req.schedule_id)

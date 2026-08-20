@@ -16,9 +16,11 @@ PLAN_GENERATE_SYSTEM = """\
 
 규칙:
 1. 각 과제는 scheduled_date(YYYY-MM-DD)로 표시하고, 반드시 template_answers.start_date ~
-   end_date 범위 안의 날짜만 사용한다.
-2. 사용자의 경험 수준과 주당 가능 횟수를 반영해 난이도와 휴식일을 배치한다. 초보자에게
-   매일 고강도 과제를 몰아주지 않는다.
+   end_date 범위 안의 날짜만 사용한다. daily_tasks는 start_date부터 end_date까지의
+   모든 날짜를 빠짐없이 포함해야 하며, 특정 날짜를 건너뛰어서는 안 된다.
+2. 사용자의 경험 수준과 주당 가능 횟수를 반영해 난이도를 조절한다. 초보자에게 매일
+   고강도 과제를 몰아주지 말고, 강도를 낮춰야 하는 날에는 가벼운 회복 활동(가벼운
+   스트레칭, 복습, 5~10분짜리 짧은 연습 등)을 배치한다. 날짜 자체를 비워서는 안 된다.
 3. title은 5~15자의 짧은 요약, description은 실제로 무엇을 몇 세트/몇 분 하는지 구체적으로
    쓴다. estimated_min은 현실적인 소요 시간(분)이다.
 4. assistant_message는 방금 만든 계획을 사용자에게 대화체로 소개하는 한국어 문장이다.
@@ -50,7 +52,9 @@ PLAN_REVISE_SYSTEM = """\
    최소화한다.
 2. 각 과제는 scheduled_date(YYYY-MM-DD)로 표시하고, 반드시 template_answers.start_date ~
    end_date 범위(사용자가 기간 자체를 조정해달라고 요청한 경우는 그 새 범위) 안의 날짜만
-   사용한다.
+   사용한다. current_plan이 다루는 구간(또는 새로 조정된 구간) 안에서는 날짜를 건너뛰지
+   않고 전부 채운다. 다만 규칙 7에 따라 이미 완료되어 current_plan에 없는 날짜는
+   새로 만들어 넣지 않는다.
 3. title/description/estimated_min 작성 기준은 최초 계획 생성과 동일하다(간결한 제목,
    구체적 설명, 현실적인 소요 시간).
 4. assistant_message는 무엇을 어떻게 바꿨는지 대화체로 짧게 설명하고, 이대로 괜찮은지

@@ -1,4 +1,3 @@
-# template_generation/schemas.py
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -9,6 +8,19 @@ QuestionType = Literal[
     "short_text",
     "number",
     "date",
+]
+
+CategoryType = Literal[
+    "운동",
+    "다이어트",
+    "음악",
+    "공부",
+    "어학",
+    "커리어",
+    "습관",
+    "마인드셋",
+    "인간관계",
+    "취미",
 ]
 
 
@@ -26,7 +38,7 @@ class TemplateQuestion(BaseModel):
 
 
 class TemplatePayload(BaseModel):
-    category: str | None = None
+    category: CategoryType | None = None
     goal_summary: str | None = None
     questions: list[TemplateQuestion] = Field(default_factory=list)
     message: str | None = None
