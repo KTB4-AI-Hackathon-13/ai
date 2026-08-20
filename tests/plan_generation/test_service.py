@@ -426,6 +426,53 @@ class TestRevisePlan:
         assert result.submitted is False
 
 
+class TestFeedbackHistory:
+    def test_generate_plan_returns_empty_feedback_history(self, monkeypatch):
+        fake_response = {
+            "assistant_message": "계획을 만들었어요.",
+            "summary": "플랜",
+            "daily_tasks": [],
+            "ready_to_confirm": True,
+            "user_confirmed": False,
+        }
+        monkeypatch.setattr(service, "generate_structured", lambda **kwargs: fake_response)
+
+        req = PlanGenerateRequest(
+            conversation_id="conv-1",
+            schedule_id="sched-1",
+            goal_summary="근육을 만들고 싶어",
+            category="운동",
+            template_answers=_template_answers(),
+        )
+        result = service.generate_plan(req)
+
+        assert result.feedback_history == []
+
+    def test_revise_plan_appends_user_message_to_feedback_history(self, monkeypatch):
+        fake_response = {
+            "assistant_message": "반영했어요.",
+            "summary": "수정된 플랜",
+            "daily_tasks": [],
+            "ready_to_confirm": False,
+            "user_confirmed": False,
+        }
+        monkeypatch.setattr(service, "generate_structured", lambda **kwargs: fake_response)
+
+        req = PlanReviseRequest(
+            conversation_id="conv-1",
+            schedule_id="sched-1",
+            goal_summary="근육을 만들고 싶어",
+            category="운동",
+            template_answers=_template_answers(),
+            current_plan=SchedulePlan(summary="기존 플랜", daily_tasks=[]),
+            user_message="주말엔 시간이 없어요",
+            feedback_history=["아침엔 운동 못해요"],
+        )
+        result = service.revise_plan(req)
+
+        assert result.feedback_history == ["아침엔 운동 못해요", "주말엔 시간이 없어요"]
+
+
 class TestConfirmPlan:
     def test_submits_plan_and_echoes_schedule_id(self, monkeypatch):
         submitted = []

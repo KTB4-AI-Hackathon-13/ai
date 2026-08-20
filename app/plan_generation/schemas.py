@@ -79,6 +79,10 @@ class PlanReviseRequest(BaseModel):
     template_answers: dict
     current_plan: SchedulePlan = Field(..., description="직전 턴에서 사용자에게 보여준 계획")
     user_message: str = Field(..., description="계획에 대한 사용자의 수정 요청/피드백 자유 텍스트")
+    feedback_history: List[str] = Field(
+        default_factory=list,
+        description="직전 턴들의 사용자 피드백 원문 목록 (이번 턴의 user_message는 미포함, 오래된 순)",
+    )
     busy_dates: List[BusyDate] = Field(default_factory=list)
 
 
@@ -94,6 +98,10 @@ class PlanTurnResponse(BaseModel):
     confirmed: bool = Field(False, description="이번 턴에 사용자가 확정 의사를 밝혔는지 여부")
     submitted: Optional[bool] = Field(
         None, description="[C안 이후 미사용] AI가 더 이상 BE로 저장을 시도하지 않아 항상 None"
+    )
+    feedback_history: List[str] = Field(
+        default_factory=list,
+        description="이번 턴까지 누적된 사용자 피드백 원문 목록. 다음 요청에 그대로 다시 실어 보내면 됨",
     )
 
 

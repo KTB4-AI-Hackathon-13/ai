@@ -80,13 +80,14 @@ def _revised_duration_days(start_date: str, daily_tasks: list[dict]) -> int | No
     return _days_between_inclusive(start_date, latest)
 
 
-def _turn_result_to_response(data: dict, category: str) -> PlanTurnResponse:
+def _turn_result_to_response(data: dict, category: str, feedback_history: list[str]) -> PlanTurnResponse:
     plan = SchedulePlan(summary=data["summary"], daily_tasks=data["daily_tasks"])
     return PlanTurnResponse(
         assistant_message=data["assistant_message"],
         category=category,
         plan=plan,
         ready_to_confirm=data["ready_to_confirm"],
+        feedback_history=feedback_history,
     )
 
 
@@ -103,6 +104,7 @@ def generate_plan(req: PlanGenerateRequest) -> PlanTurnResponse:
             category=req.category,
             plan=SchedulePlan(summary="", daily_tasks=[]),
             ready_to_confirm=False,
+            feedback_history=[],
         )
 
     data = generate_structured(
@@ -112,11 +114,13 @@ def generate_plan(req: PlanGenerateRequest) -> PlanTurnResponse:
         schema_name="plan_turn",
     )
 
-    return _turn_result_to_response(data, req.category)
+    return _turn_result_to_response(data, req.category, feedback_history=[])
 
 
 def revise_plan(req: PlanReviseRequest) -> PlanTurnResponse:
     _require_date_range(req.template_answers)
+
+    feedback_history = req.feedback_history + [req.user_message]
 
     data = generate_structured(
         system_prompt=PLAN_REVISE_SYSTEM,
@@ -134,6 +138,7 @@ def revise_plan(req: PlanReviseRequest) -> PlanTurnResponse:
             plan=req.current_plan,
             ready_to_confirm=False,
             confirmed=False,
+            feedback_history=feedback_history,
         )
 
     if data["user_confirmed"]:
@@ -143,9 +148,10 @@ def revise_plan(req: PlanReviseRequest) -> PlanTurnResponse:
             plan=req.current_plan,
             ready_to_confirm=True,
             confirmed=True,
+            feedback_history=feedback_history,
         )
 
-    return _turn_result_to_response(data, req.category)
+    return _turn_result_to_response(data, req.category, feedback_history)
 
 
 def confirm_plan(req: PlanConfirmRequest) -> PlanConfirmResponse:

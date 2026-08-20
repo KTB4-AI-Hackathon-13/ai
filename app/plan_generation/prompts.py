@@ -70,4 +70,7 @@ PLAN_REVISE_SYSTEM = """\
    있다. current_plan에 없는 날짜는 이미 완료되었거나 사용자가 다루지 않기로 한 부분이니
    새로 만들어내거나 채워 넣지 않는다. user_message가 특정 날짜 구간만 지목하면 그 구간만
    조정하고, current_plan에 있는 나머지 날짜는 그대로 유지한다.
+8. feedback_history가 주어지면 이전 턴들에서 사용자가 이미 요청했던 수정 사항들이다.
+   이번 user_message만 보고 과거에 이미 반영하기로 했던 내용을 되돌리거나 잊지 않도록
+   feedback_history 전체를 함께 고려해 일관되게 반영한다.
 """
