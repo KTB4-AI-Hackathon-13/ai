@@ -42,11 +42,22 @@ class TestRequireDateRange:
 
 
 class TestGeneratePlan:
+    def test_accepts_goal_summary_field_and_free_form_category(self):
+        req = PlanGenerateRequest(
+            conversation_id="conv-1",
+            schedule_id="sched-1",
+            goal_summary="10km 마라톤 완주하기",
+            category="러닝",
+            template_answers=_template_answers(),
+        )
+        assert req.goal_summary == "10km 마라톤 완주하기"
+        assert req.category == "러닝"
+
     def test_rejects_missing_date_range(self):
         req = PlanGenerateRequest(
             conversation_id="conv-1",
             schedule_id="sched-1",
-            goal="근육을 만들고 싶어",
+            goal_summary="근육을 만들고 싶어",
             category="운동",
             template_answers={"experience": "beginner"},
         )
@@ -79,7 +90,7 @@ class TestGeneratePlan:
         req = PlanGenerateRequest(
             conversation_id="conv-1",
             schedule_id="sched-1",
-            goal="근육을 만들고 싶어",
+            goal_summary="근육을 만들고 싶어",
             category="운동",
             template_answers=_template_answers(),
         )
@@ -110,7 +121,7 @@ class TestGeneratePlan:
         req = PlanGenerateRequest(
             conversation_id="conv-1",
             schedule_id="sched-1",
-            goal="근육을 만들고 싶어",
+            goal_summary="근육을 만들고 싶어",
             category="운동",
             template_answers=_template_answers(),
         )
@@ -137,7 +148,7 @@ class TestGeneratePlan:
         req = PlanGenerateRequest(
             conversation_id="conv-1",
             schedule_id="sched-1",
-            goal="근육을 만들고 싶어",
+            goal_summary="근육을 만들고 싶어",
             category="운동",
             template_answers=_template_answers(),
             long_term_context=LongTermContext(
@@ -157,6 +168,55 @@ class TestGeneratePlan:
         assert "마라톤" in captured["user_content"]
         assert "아침엔 시간 없음" in captured["user_content"]
 
+    def test_rejects_period_over_30_days_without_calling_llm(self, monkeypatch):
+        llm_calls = []
+        monkeypatch.setattr(
+            service, "generate_structured", lambda **kwargs: llm_calls.append(kwargs) or {}
+        )
+        notified = []
+        monkeypatch.setattr(
+            service.be_client,
+            "notify_conversation",
+            lambda conversation_id, role, content: notified.append((conversation_id, role, content)),
+        )
+
+        req = PlanGenerateRequest(
+            conversation_id="conv-1",
+            schedule_id="sched-1",
+            goal_summary="10km 마라톤 완주하기",
+            category="운동",
+            template_answers=_template_answers(start_date="2026-08-01", end_date="2026-08-31"),
+        )
+        result = service.generate_plan(req)
+
+        assert llm_calls == []
+        assert result.ready_to_confirm is False
+        assert result.plan.daily_tasks == []
+        assert "30" in result.assistant_message
+        assert [role for _, role, _ in notified] == ["user", "assistant"]
+
+    def test_accepts_period_of_exactly_30_days(self, monkeypatch):
+        fake_response = {
+            "assistant_message": "30일짜리 계획을 만들었어요.",
+            "summary": "30일 플랜",
+            "daily_tasks": [],
+            "ready_to_confirm": True,
+            "user_confirmed": False,
+        }
+        monkeypatch.setattr(service, "generate_structured", lambda **kwargs: fake_response)
+        monkeypatch.setattr(service.be_client, "notify_conversation", lambda *a, **k: None)
+
+        req = PlanGenerateRequest(
+            conversation_id="conv-1",
+            schedule_id="sched-1",
+            goal_summary="10km 마라톤 완주하기",
+            category="운동",
+            template_answers=_template_answers(start_date="2026-08-01", end_date="2026-08-30"),
+        )
+        result = service.generate_plan(req)
+
+        assert result.assistant_message == fake_response["assistant_message"]
+
 
 class TestRevisePlan:
     def test_builds_revised_plan_from_llm_response(self, monkeypatch):
@@ -173,7 +233,7 @@ class TestRevisePlan:
         req = PlanReviseRequest(
             conversation_id="conv-1",
             schedule_id="sched-1",
-            goal="근육을 만들고 싶어",
+            goal_summary="근육을 만들고 싶어",
             category="운동",
             template_answers=_template_answers(),
             current_plan=SchedulePlan(summary="기존 플랜", daily_tasks=[]),
@@ -184,6 +244,79 @@ class TestRevisePlan:
         assert result.ready_to_confirm is False
         assert result.confirmed is False
         assert result.submitted is None
+        assert result.plan.summary == fake_response["summary"]
+
+    def test_rejects_revised_plan_exceeding_30_days(self, monkeypatch):
+        fake_response = {
+            "assistant_message": "기간을 늘려서 다시 짰어요.",
+            "summary": "연장된 플랜",
+            "daily_tasks": [
+                {
+                    "scheduled_date": "2026-09-25",
+                    "title": "장거리 러닝",
+                    "description": "15km 러닝",
+                    "estimated_min": 90,
+                }
+            ],
+            "ready_to_confirm": True,
+            "user_confirmed": True,
+        }
+        monkeypatch.setattr(service, "generate_structured", lambda **kwargs: fake_response)
+        monkeypatch.setattr(service.be_client, "notify_conversation", lambda *a, **k: None)
+        submit_calls = []
+        monkeypatch.setattr(
+            service.be_client,
+            "submit_final_plan",
+            lambda schedule_id, plan: submit_calls.append((schedule_id, plan)),
+        )
+
+        current_plan = SchedulePlan(summary="기존 플랜", daily_tasks=[])
+        req = PlanReviseRequest(
+            conversation_id="conv-1",
+            schedule_id="sched-1",
+            goal_summary="근육을 만들고 싶어",
+            category="운동",
+            template_answers=_template_answers(start_date="2026-08-20", end_date="2026-08-29"),
+            current_plan=current_plan,
+            user_message="기간 한 달 더 늘려줘",
+        )
+        result = service.revise_plan(req)
+
+        assert result.confirmed is False
+        assert result.ready_to_confirm is False
+        assert result.plan == current_plan
+        assert "30" in result.assistant_message
+        assert submit_calls == []
+
+    def test_accepts_revised_plan_within_30_days(self, monkeypatch):
+        fake_response = {
+            "assistant_message": "주말은 빼고 다시 짰어요.",
+            "summary": "주중 위주 근력 운동 플랜",
+            "daily_tasks": [
+                {
+                    "scheduled_date": "2026-08-29",
+                    "title": "유산소",
+                    "description": "조깅 20분",
+                    "estimated_min": 20,
+                }
+            ],
+            "ready_to_confirm": False,
+            "user_confirmed": False,
+        }
+        monkeypatch.setattr(service, "generate_structured", lambda **kwargs: fake_response)
+        monkeypatch.setattr(service.be_client, "notify_conversation", lambda *a, **k: None)
+
+        req = PlanReviseRequest(
+            conversation_id="conv-1",
+            schedule_id="sched-1",
+            goal_summary="근육을 만들고 싶어",
+            category="운동",
+            template_answers=_template_answers(),
+            current_plan=SchedulePlan(summary="기존 플랜", daily_tasks=[]),
+            user_message="주말엔 시간이 없어요",
+        )
+        result = service.revise_plan(req)
+
         assert result.plan.summary == fake_response["summary"]
 
     def test_partial_current_plan_covering_only_remaining_days(self, monkeypatch):
@@ -217,7 +350,7 @@ class TestRevisePlan:
         req = PlanReviseRequest(
             conversation_id="conv-1",
             schedule_id="sched-1",
-            goal="근육을 만들고 싶어",
+            goal_summary="근육을 만들고 싶어",
             category="운동",
             template_answers=_template_answers(start_date="2026-08-01", end_date="2026-08-30"),
             current_plan=SchedulePlan(summary="남은 구간 플랜", daily_tasks=remaining_tasks),
@@ -249,7 +382,7 @@ class TestRevisePlan:
         req = PlanReviseRequest(
             conversation_id="conv-1",
             schedule_id="sched-1",
-            goal="근육을 만들고 싶어",
+            goal_summary="근육을 만들고 싶어",
             category="운동",
             template_answers=_template_answers(),
             current_plan=current_plan,
@@ -281,7 +414,7 @@ class TestRevisePlan:
         req = PlanReviseRequest(
             conversation_id="conv-1",
             schedule_id="sched-1",
-            goal="근육을 만들고 싶어",
+            goal_summary="근육을 만들고 싶어",
             category="운동",
             template_answers=_template_answers(),
             current_plan=SchedulePlan(summary="기존 플랜", daily_tasks=[]),
