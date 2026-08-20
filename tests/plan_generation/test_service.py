@@ -551,7 +551,7 @@ class TestReschedulePlan:
 
 
 class TestConfirmReschedule:
-    def test_submits_updated_tasks_to_be(self, monkeypatch):
+    def test_submits_full_task_list_to_be(self, monkeypatch):
         submitted = []
         monkeypatch.setattr(
             service.be_client,
@@ -561,14 +561,23 @@ class TestConfirmReschedule:
 
         req = PlanRescheduleConfirmRequest(
             schedule_id="sched-1",
-            updated_tasks=[
-                RescheduledTaskUpdate(
+            tasks=[
+                RescheduleTask(
+                    id=1,
+                    scheduled_date="2026-08-19",
+                    title="핵심 개념 학습 완료",
+                    description="핵심 개념 정리",
+                    estimated_min=45,
+                    completed=True,
+                ),
+                RescheduleTask(
                     id=3,
                     scheduled_date="2026-08-24",
                     title="달력 컴포넌트 연결",
                     description="달력 컴포넌트 연결",
                     estimated_min=50,
-                )
+                    completed=False,
+                ),
             ],
         )
         result = service.confirm_reschedule(req)
@@ -580,12 +589,21 @@ class TestConfirmReschedule:
                 "sched-1",
                 [
                     {
+                        "id": 1,
+                        "scheduled_date": "2026-08-19",
+                        "title": "핵심 개념 학습 완료",
+                        "description": "핵심 개념 정리",
+                        "estimated_min": 45,
+                        "completed": True,
+                    },
+                    {
                         "id": 3,
                         "scheduled_date": "2026-08-24",
                         "title": "달력 컴포넌트 연결",
                         "description": "달력 컴포넌트 연결",
                         "estimated_min": 50,
-                    }
+                        "completed": False,
+                    },
                 ],
             )
         ]
@@ -598,13 +616,14 @@ class TestConfirmReschedule:
 
         req = PlanRescheduleConfirmRequest(
             schedule_id="sched-1",
-            updated_tasks=[
-                RescheduledTaskUpdate(
+            tasks=[
+                RescheduleTask(
                     id=3,
                     scheduled_date="2026-08-24",
                     title="달력 컴포넌트 연결",
                     description="달력 컴포넌트 연결",
                     estimated_min=50,
+                    completed=False,
                 )
             ],
         )

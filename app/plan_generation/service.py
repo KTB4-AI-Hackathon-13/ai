@@ -80,12 +80,13 @@ def _revised_duration_days(start_date: str, daily_tasks: list[dict]) -> int | No
     return _days_between_inclusive(start_date, latest)
 
 
-def _turn_result_to_response(data: dict) -> PlanTurnResponse:
+def _turn_result_to_response(data: dict, feedback_history: list[str] | None = None) -> PlanTurnResponse:
     plan = SchedulePlan(summary=data["summary"], daily_tasks=data["daily_tasks"])
     return PlanTurnResponse(
         assistant_message=data["assistant_message"],
         plan=plan,
         ready_to_confirm=data["ready_to_confirm"],
+        feedback_history=feedback_history or [],
     )
 
 
@@ -139,6 +140,7 @@ def revise_plan(req: PlanReviseRequest) -> PlanTurnResponse:
             plan=req.current_plan,
             ready_to_confirm=False,
             confirmed=False,
+            feedback_history=req.feedback_history,
         )
 
     if data["user_confirmed"]:
@@ -155,9 +157,11 @@ def revise_plan(req: PlanReviseRequest) -> PlanTurnResponse:
             ready_to_confirm=True,
             confirmed=True,
             submitted=submitted,
+            feedback_history=req.feedback_history,
         )
 
-    result = _turn_result_to_response(data)
+    updated_history = req.feedback_history + [req.user_message]
+    result = _turn_result_to_response(data, updated_history)
     be_client.notify_conversation(req.conversation_id, role="assistant", content=result.assistant_message)
     return result
 
@@ -212,8 +216,8 @@ def reschedule_plan(req: PlanRescheduleRequest) -> PlanRescheduleResponse:
 
 
 def confirm_reschedule(req: PlanRescheduleConfirmRequest) -> PlanRescheduleConfirmResponse:
-    """/plan/reschedule이 제안한 updated_tasks를 사용자가 승인했을 때, 그 내용을 그대로
-    BE에 반영한다."""
-    tasks = [task.model_dump() for task in req.updated_tasks]
+    """/plan/reschedule 제안을 사용자가 승인했을 때, 이 스케줄의 전체 태스크 목록(제안
+    반영 후 최종본)을 그대로 BE에 전송해 통째로 교체한다."""
+    tasks = [task.model_dump() for task in req.tasks]
     be_client.update_scheduled_tasks(req.schedule_id, tasks)
     return PlanRescheduleConfirmResponse(submitted=True, schedule_id=req.schedule_id)

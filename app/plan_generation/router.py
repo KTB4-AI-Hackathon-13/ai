@@ -4,7 +4,7 @@
   POST /plan/revise        사용자 피드백 → 수정된 계획 + 챗봇 설명 멘트
   POST /plan/confirm       사용자가 최종 확정한 계획 → BE로 전송
   POST /plan/reschedule            이미 캘린더에 올라간 계획을 completed=false 태스크만 골라 수정 제안(diff)
-  POST /plan/reschedule/confirm    위 제안을 사용자가 승인 → 그 변경분만 BE로 전송
+  POST /plan/reschedule/confirm    위 제안을 사용자가 승인 → 이 스케줄의 전체 태스크 목록을 BE로 전송(통째 교체)
 
 이 서버는 상태 없는 순수 추론 서버다 — 대화 이력이나 계획 상태를 자체 저장하지 않는다.
 매 요청마다 BE가 필요한 컨텍스트(template_answers, current_plan 등)를 그대로 실어 보낸다.

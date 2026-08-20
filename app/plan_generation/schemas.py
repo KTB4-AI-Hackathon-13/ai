@@ -80,6 +80,11 @@ class PlanReviseRequest(BaseModel):
     current_plan: SchedulePlan = Field(..., description="직전 턴에서 사용자에게 보여준 계획")
     user_message: str = Field(..., description="계획에 대한 사용자의 수정 요청/피드백 자유 텍스트")
     busy_dates: List[BusyDate] = Field(default_factory=list)
+    feedback_history: List[str] = Field(
+        default_factory=list,
+        description="직전까지 오간 수정 요청 누적 이력. BE가 이전 응답의 feedback_history를 "
+        "그대로 되돌려보낸다(이 서비스는 상태를 저장하지 않으므로 매 요청마다 받아서 이어붙인다).",
+    )
 
 
 class PlanTurnResponse(BaseModel):
@@ -93,6 +98,11 @@ class PlanTurnResponse(BaseModel):
     confirmed: bool = Field(False, description="이번 턴에 사용자가 확정 의사를 밝혔는지 여부")
     submitted: Optional[bool] = Field(
         None, description="confirmed=True일 때만 의미 있음 — BE로 최종 계획 전송이 성공했는지 여부"
+    )
+    feedback_history: List[str] = Field(
+        default_factory=list,
+        description="이번 턴까지 누적된 수정 요청 이력. BE는 다음 /plan/revise 요청에 그대로 "
+        "실어 보내야 한다(상태 없는 서버이므로 매 요청마다 왕복시켜 이어붙인다).",
     )
 
 
@@ -166,13 +176,14 @@ class PlanRescheduleResponse(BaseModel):
 
 
 class PlanRescheduleConfirmRequest(BaseModel):
-    """/plan/reschedule 응답에서 받은 updated_tasks를 사용자가 승인했을 때, 그대로 다시
-    실어 보내 실제로 BE에 반영시키는 요청. 이 서비스는 상태가 없어서 직전 제안을 기억하지
-    않는다 — 승인된 내용을 호출자가 그대로 들고 있다가 다시 보내야 한다."""
+    """/plan/reschedule 제안을 사용자가 승인했을 때, 이 스케줄의 전체 태스크 목록(완료 +
+    미완료, 제안 반영 후 최종 상태)을 실어 보내 BE에 그대로 반영시키는 요청. FE가 원본
+    태스크 목록에 /plan/reschedule 응답의 updated_tasks를 병합한 최종본을 만들어 보낸다.
+    diff가 아니라 전체 목록을 보내 BE가 이 스케줄의 태스크를 통째로 교체한다."""
 
     schedule_id: str = Field(..., description="수정할 대상 계획이 귀속된 BE 쪽 schedule ID")
-    updated_tasks: List[RescheduledTaskUpdate] = Field(
-        ..., description="/plan/reschedule 응답의 updated_tasks를 그대로 넣는다."
+    tasks: List[RescheduleTask] = Field(
+        ..., description="이 스케줄에 속한 전체 태스크(완료 + 미완료), 제안 반영 후 최종본"
     )
 
 
