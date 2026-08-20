@@ -58,6 +58,23 @@ def _plan_duration_exceeded_message(days: int) -> str:
     )
 
 
+def _plan_duration_exceeded_after_revise_message(days: int) -> str:
+    return (
+        f"전체 계획 기간은 최대 {MAX_PLAN_DURATION_DAYS}일까지만 가능해요. "
+        f"요청하신 대로 하면 {days}일이 되어 반영하지 못했어요. "
+        "다른 방식으로 조정해주시겠어요?"
+    )
+
+
+def _revised_duration_days(start_date: str, daily_tasks: list[dict]) -> int | None:
+    """daily_tasks가 비어있으면(남은 구간이 전부 완료돼 배치할 과제가 없는 경우)
+    비교 대상이 없으므로 None을 반환해 상한 체크를 건너뛴다."""
+    if not daily_tasks:
+        return None
+    latest = max(task["scheduled_date"] for task in daily_tasks)
+    return _days_between_inclusive(start_date, latest)
+
+
 def _turn_result_to_response(data: dict) -> PlanTurnResponse:
     plan = SchedulePlan(summary=data["summary"], daily_tasks=data["daily_tasks"])
     return PlanTurnResponse(
@@ -107,6 +124,17 @@ def revise_plan(req: PlanReviseRequest) -> PlanTurnResponse:
     )
 
     be_client.notify_conversation(req.conversation_id, role="user", content=req.user_message)
+
+    revised_days = _revised_duration_days(req.template_answers["start_date"], data["daily_tasks"])
+    if revised_days is not None and revised_days > MAX_PLAN_DURATION_DAYS:
+        message = _plan_duration_exceeded_after_revise_message(revised_days)
+        be_client.notify_conversation(req.conversation_id, role="assistant", content=message)
+        return PlanTurnResponse(
+            assistant_message=message,
+            plan=req.current_plan,
+            ready_to_confirm=False,
+            confirmed=False,
+        )
 
     if data["user_confirmed"]:
         submitted = _try_submit_final_plan(req.schedule_id, req.current_plan)
