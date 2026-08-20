@@ -18,7 +18,6 @@ class BusyDate(BaseModel):
 
     date: str = Field(..., description="YYYY-MM-DD")
     event_count: int = Field(..., description="그 날짜에 이미 잡힌 일정 개수")
-    all_day: bool = Field(False, description="하루 종일 막혀 있는 일정(출장/휴가 등) 여부")
 
 
 class DailyTask(BaseModel):
