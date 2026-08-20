@@ -68,7 +68,7 @@ def generate_plan(req: PlanGenerateRequest) -> PlanTurnResponse:
     )
 
     result = _turn_result_to_response(data)
-    be_client.notify_conversation(req.conversation_id, role="user", content=req.goal)
+    be_client.notify_conversation(req.conversation_id, role="user", content=req.goal_summary)
     be_client.notify_conversation(req.conversation_id, role="assistant", content=result.assistant_message)
     return result
 

@@ -42,11 +42,22 @@ class TestRequireDateRange:
 
 
 class TestGeneratePlan:
+    def test_accepts_goal_summary_field_and_free_form_category(self):
+        req = PlanGenerateRequest(
+            conversation_id="conv-1",
+            schedule_id="sched-1",
+            goal_summary="10km 마라톤 완주하기",
+            category="러닝",
+            template_answers=_template_answers(),
+        )
+        assert req.goal_summary == "10km 마라톤 완주하기"
+        assert req.category == "러닝"
+
     def test_rejects_missing_date_range(self):
         req = PlanGenerateRequest(
             conversation_id="conv-1",
             schedule_id="sched-1",
-            goal="근육을 만들고 싶어",
+            goal_summary="근육을 만들고 싶어",
             category="운동",
             template_answers={"experience": "beginner"},
         )
@@ -79,7 +90,7 @@ class TestGeneratePlan:
         req = PlanGenerateRequest(
             conversation_id="conv-1",
             schedule_id="sched-1",
-            goal="근육을 만들고 싶어",
+            goal_summary="근육을 만들고 싶어",
             category="운동",
             template_answers=_template_answers(),
         )
@@ -110,7 +121,7 @@ class TestGeneratePlan:
         req = PlanGenerateRequest(
             conversation_id="conv-1",
             schedule_id="sched-1",
-            goal="근육을 만들고 싶어",
+            goal_summary="근육을 만들고 싶어",
             category="운동",
             template_answers=_template_answers(),
         )
@@ -137,7 +148,7 @@ class TestGeneratePlan:
         req = PlanGenerateRequest(
             conversation_id="conv-1",
             schedule_id="sched-1",
-            goal="근육을 만들고 싶어",
+            goal_summary="근육을 만들고 싶어",
             category="운동",
             template_answers=_template_answers(),
             long_term_context=LongTermContext(
@@ -173,7 +184,7 @@ class TestRevisePlan:
         req = PlanReviseRequest(
             conversation_id="conv-1",
             schedule_id="sched-1",
-            goal="근육을 만들고 싶어",
+            goal_summary="근육을 만들고 싶어",
             category="운동",
             template_answers=_template_answers(),
             current_plan=SchedulePlan(summary="기존 플랜", daily_tasks=[]),
@@ -217,7 +228,7 @@ class TestRevisePlan:
         req = PlanReviseRequest(
             conversation_id="conv-1",
             schedule_id="sched-1",
-            goal="근육을 만들고 싶어",
+            goal_summary="근육을 만들고 싶어",
             category="운동",
             template_answers=_template_answers(start_date="2026-08-01", end_date="2026-08-30"),
             current_plan=SchedulePlan(summary="남은 구간 플랜", daily_tasks=remaining_tasks),
@@ -249,7 +260,7 @@ class TestRevisePlan:
         req = PlanReviseRequest(
             conversation_id="conv-1",
             schedule_id="sched-1",
-            goal="근육을 만들고 싶어",
+            goal_summary="근육을 만들고 싶어",
             category="운동",
             template_answers=_template_answers(),
             current_plan=current_plan,
@@ -281,7 +292,7 @@ class TestRevisePlan:
         req = PlanReviseRequest(
             conversation_id="conv-1",
             schedule_id="sched-1",
-            goal="근육을 만들고 싶어",
+            goal_summary="근육을 만들고 싶어",
             category="운동",
             template_answers=_template_answers(),
             current_plan=SchedulePlan(summary="기존 플랜", daily_tasks=[]),

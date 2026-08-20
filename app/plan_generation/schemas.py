@@ -13,9 +13,6 @@ from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
-Category = Literal["운동", "공부", "습관", "기타"]
-
-
 class BusyDate(BaseModel):
     """BE가 사용자 캘린더를 스캔해 전처리한 기존 일정. 참고용 힌트일 뿐, 강제 규칙은 아니다."""
 
@@ -37,7 +34,7 @@ class SchedulePlan(BaseModel):
 
 
 class PastGoalSummary(BaseModel):
-    category: Category
+    category: str = Field(..., min_length=1)
     goal: str
     period_days: int
     completion_status: Literal["completed", "abandoned", "in_progress"]
@@ -57,8 +54,8 @@ class LongTermContext(BaseModel):
 class PlanGenerateRequest(BaseModel):
     conversation_id: str = Field(..., description="이 대화를 식별하는 BE 쪽 ID")
     schedule_id: str = Field(..., description="이 계획이 귀속될 BE 쪽 schedule ID (확정 시 전송에 사용)")
-    goal: str
-    category: Category
+    goal_summary: str
+    category: str = Field(..., min_length=1)
     template_answers: dict = Field(
         ...,
         description="template_generation이 수집한 사용자 답변. "
@@ -77,8 +74,8 @@ class PlanGenerateRequest(BaseModel):
 class PlanReviseRequest(BaseModel):
     conversation_id: str
     schedule_id: str = Field(..., description="이 계획이 귀속될 BE 쪽 schedule ID (확정 시 전송에 사용)")
-    goal: str
-    category: Category
+    goal_summary: str
+    category: str = Field(..., min_length=1)
     template_answers: dict
     current_plan: SchedulePlan = Field(..., description="직전 턴에서 사용자에게 보여준 계획")
     user_message: str = Field(..., description="계획에 대한 사용자의 수정 요청/피드백 자유 텍스트")
