@@ -53,7 +53,7 @@ class LongTermContext(BaseModel):
 
 class PlanGenerateRequest(BaseModel):
     conversation_id: str = Field(..., description="이 대화를 식별하는 BE 쪽 ID")
-    schedule_id: str = Field(..., description="이 계획이 귀속될 BE 쪽 schedule ID (확정 시 전송에 사용)")
+    schedule_id: str = Field(None, description="이 계획이 귀속될 BE 쪽 schedule ID (확정 시 전송에 사용)")
     goal_summary: str
     category: str = Field(..., min_length=1)
     template_answers: dict = Field(
@@ -73,7 +73,7 @@ class PlanGenerateRequest(BaseModel):
 
 class PlanReviseRequest(BaseModel):
     conversation_id: str
-    schedule_id: str = Field(..., description="이 계획이 귀속될 BE 쪽 schedule ID (확정 시 전송에 사용)")
+    schedule_id: str = Field(None, description="이 계획이 귀속될 BE 쪽 schedule ID (확정 시 전송에 사용)")
     goal_summary: str
     category: str = Field(..., min_length=1)
     template_answers: dict
