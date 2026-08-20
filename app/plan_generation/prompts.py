@@ -36,6 +36,8 @@ PLAN_GENERATE_SYSTEM = """\
    이번엔 더 가볍게 시작하고, preferences에 누적된 제약은 별다른 언급이 없어도 계속 지킨다.
    long_term_context가 없거나 past_goals/preferences가 모두 비어있으면 무시하고 기존 방식대로
    진행한다.
+8. template_answers 안에 피하고 싶은 시간대나 지켜야 할 제약, 선호사항에 대한 자유 응답이
+   있으면 이번 계획의 날짜/강도 배치에 처음부터 반영한다.
 """
 
 PLAN_REVISE_SYSTEM = """\
@@ -70,4 +72,6 @@ PLAN_REVISE_SYSTEM = """\
    있다. current_plan에 없는 날짜는 이미 완료되었거나 사용자가 다루지 않기로 한 부분이니
    새로 만들어내거나 채워 넣지 않는다. user_message가 특정 날짜 구간만 지목하면 그 구간만
    조정하고, current_plan에 있는 나머지 날짜는 그대로 유지한다.
+8. template_answers 안에 피하고 싶은 시간대나 지켜야 할 제약, 선호사항에 대한 자유 응답이
+   있으면 이번 user_message와 무관해 보여도 계속 지킨다.
 """
