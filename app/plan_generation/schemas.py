@@ -133,10 +133,11 @@ class RescheduledTaskUpdate(BaseModel):
 
 
 class PlanRescheduleRequest(BaseModel):
-    """이미 확정되어 캘린더에 올라간 계획을 사용자가 다시 수정하고 싶을 때 쓰는 단일 요청.
-    /plan/revise와 달리 대화가 아니라 한 번의 요청으로 바로 반영까지 끝낸다. 전체 계획을
-    통째로 교체하지 않고, 완료되지 않은(completed=false) 태스크 중 실제로 바뀐 것만 찾아내
-    그 변경분만 BE로 전송한다."""
+    """이미 확정되어 캘린더에 올라간 계획을 사용자가 다시 수정하고 싶을 때 쓰는 요청.
+    /plan/revise처럼 대화로 되묻진 않지만, 이 호출 자체는 BE에 아무것도 반영하지 않는다 —
+    변경 제안만 만들어서 보여주고, 사용자가 그걸 보고 승인하면 /plan/reschedule/confirm으로
+    그 결과를 그대로 다시 보내야 실제로 캘린더에 반영된다. 전체 계획을 통째로 교체하지 않고,
+    완료되지 않은(completed=false) 태스크 중 실제로 바뀐 것만 찾아낸다."""
 
     conversation_id: str = Field(..., description="이 대화를 식별하는 BE 쪽 ID")
     schedule_id: str = Field(..., description="수정할 대상 계획이 귀속된 BE 쪽 schedule ID")
@@ -155,10 +156,29 @@ class PlanRescheduleResponse(BaseModel):
     assistant_message: str = Field(..., description="사용자에게 그대로 보여줄 챗봇 응답 텍스트")
     updated_tasks: List[RescheduledTaskUpdate] = Field(
         default_factory=list,
-        description="이번 요청으로 실제로 바뀐 태스크만 담긴다(diff). 바뀐 게 없으면 빈 배열.",
+        description="이번 요청으로 바뀌는 태스크 제안(diff). 아직 BE엔 반영 안 됨 — 사용자가 "
+        "승인하면 이 값을 그대로 /plan/reschedule/confirm에 다시 실어 보내야 한다.",
     )
-    submitted: bool = Field(..., description="변경분을 BE로 전송했고 성공했는지 여부. updated_tasks가 "
-        "비어 있으면 전송 자체가 필요 없으므로 true.")
+    ready_to_confirm: bool = Field(
+        ..., description="이 제안을 그대로 확정해도 되는지 여부. 30일 상한 초과 등으로 반영이 "
+        "불가능하면 false이고, 이때 updated_tasks는 빈 배열이다."
+    )
+
+
+class PlanRescheduleConfirmRequest(BaseModel):
+    """/plan/reschedule 응답에서 받은 updated_tasks를 사용자가 승인했을 때, 그대로 다시
+    실어 보내 실제로 BE에 반영시키는 요청. 이 서비스는 상태가 없어서 직전 제안을 기억하지
+    않는다 — 승인된 내용을 호출자가 그대로 들고 있다가 다시 보내야 한다."""
+
+    schedule_id: str = Field(..., description="수정할 대상 계획이 귀속된 BE 쪽 schedule ID")
+    updated_tasks: List[RescheduledTaskUpdate] = Field(
+        ..., description="/plan/reschedule 응답의 updated_tasks를 그대로 넣는다."
+    )
+
+
+class PlanRescheduleConfirmResponse(BaseModel):
+    submitted: bool
+    schedule_id: str
 
 
 # ── strict structured output용 raw JSON Schema ──────────────────────

@@ -14,6 +14,8 @@ from app.plan_generation.schemas import (
     PlanConfirmRequest,
     PlanConfirmResponse,
     PlanGenerateRequest,
+    PlanRescheduleConfirmRequest,
+    PlanRescheduleConfirmResponse,
     PlanRescheduleRequest,
     PlanRescheduleResponse,
     PlanReviseRequest,
@@ -174,18 +176,10 @@ def confirm_plan(req: PlanConfirmRequest) -> PlanConfirmResponse:
     return PlanConfirmResponse(submitted=True, schedule_id=req.schedule_id)
 
 
-def _try_update_scheduled_tasks(schedule_id: str, tasks: list[dict]) -> bool:
-    try:
-        be_client.update_scheduled_tasks(schedule_id, tasks)
-        return True
-    except httpx.HTTPError as exc:
-        logger.warning("변경된 태스크 BE 전송 실패(대화는 계속 진행): %s", exc)
-        return False
-
-
 def reschedule_plan(req: PlanRescheduleRequest) -> PlanRescheduleResponse:
-    """이미 캘린더에 있는 태스크 중 completed=false인 것만 대화 없이 한 번에 수정해,
-    실제로 바뀐 것만 BE에 반영한다(전체 계획을 다시 보내지 않는다)."""
+    """이미 캘린더에 있는 태스크 중 completed=false인 것만 골라 수정 제안을 만든다.
+    이 함수는 BE에 아무것도 전송하지 않는다 — 사용자가 승인하면 별도로
+    confirm_reschedule을 호출해야 실제로 반영된다."""
     _require_date_range(req.template_answers)
 
     data = generate_structured(
@@ -207,17 +201,19 @@ def reschedule_plan(req: PlanRescheduleRequest) -> PlanRescheduleResponse:
     if revised_days is not None and revised_days > MAX_PLAN_DURATION_DAYS:
         message = _plan_duration_exceeded_after_revise_message(revised_days)
         be_client.notify_conversation(req.conversation_id, role="assistant", content=message)
-        return PlanRescheduleResponse(assistant_message=message, updated_tasks=[], submitted=False)
+        return PlanRescheduleResponse(assistant_message=message, updated_tasks=[], ready_to_confirm=False)
 
-    submitted = _try_update_scheduled_tasks(req.schedule_id, data["updated_tasks"])
-    assistant_message = (
-        data["assistant_message"]
-        if submitted
-        else "계획을 수정했는데 캘린더 반영 중 문제가 생겼어요. 잠시 후 다시 시도해주세요."
-    )
-    be_client.notify_conversation(req.conversation_id, role="assistant", content=assistant_message)
+    be_client.notify_conversation(req.conversation_id, role="assistant", content=data["assistant_message"])
     return PlanRescheduleResponse(
-        assistant_message=assistant_message,
+        assistant_message=data["assistant_message"],
         updated_tasks=data["updated_tasks"],
-        submitted=submitted,
+        ready_to_confirm=True,
     )
+
+
+def confirm_reschedule(req: PlanRescheduleConfirmRequest) -> PlanRescheduleConfirmResponse:
+    """/plan/reschedule이 제안한 updated_tasks를 사용자가 승인했을 때, 그 내용을 그대로
+    BE에 반영한다."""
+    tasks = [task.model_dump() for task in req.updated_tasks]
+    be_client.update_scheduled_tasks(req.schedule_id, tasks)
+    return PlanRescheduleConfirmResponse(submitted=True, schedule_id=req.schedule_id)

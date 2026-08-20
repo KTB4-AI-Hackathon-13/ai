@@ -7,8 +7,10 @@ from app.plan_generation.schemas import (
     PastGoalSummary,
     PlanConfirmRequest,
     PlanGenerateRequest,
+    PlanRescheduleConfirmRequest,
     PlanRescheduleRequest,
     PlanReviseRequest,
+    RescheduledTaskUpdate,
     RescheduleTask,
     SchedulePlan,
 )
@@ -457,9 +459,9 @@ class TestReschedulePlan:
             ),
         ]
 
-    def test_returns_and_submits_only_changed_tasks(self, monkeypatch):
+    def test_proposes_only_changed_tasks_without_calling_be(self, monkeypatch):
         fake_response = {
-            "assistant_message": "달력 컴포넌트 연결을 8월 24일로 옮겼어요.",
+            "assistant_message": "달력 컴포넌트 연결을 8월 24일로 옮길게요.",
             "updated_tasks": [
                 {
                     "id": 3,
@@ -470,70 +472,6 @@ class TestReschedulePlan:
                 }
             ],
         }
-        monkeypatch.setattr(service, "generate_structured", lambda **kwargs: fake_response)
-        monkeypatch.setattr(service.be_client, "notify_conversation", lambda *a, **k: None)
-        submitted = []
-        monkeypatch.setattr(
-            service.be_client,
-            "update_scheduled_tasks",
-            lambda schedule_id, tasks: submitted.append((schedule_id, tasks)),
-        )
-
-        req = PlanRescheduleRequest(
-            conversation_id="conv-1",
-            schedule_id="sched-1",
-            goal_summary="AI 확정 학습 계획",
-            category="학습",
-            template_answers=_template_answers(start_date="2026-08-15", end_date="2026-08-31"),
-            tasks=self._tasks(),
-            user_message="달력 컴포넌트 연결을 8월 24일로 옮겨줘",
-        )
-        result = service.reschedule_plan(req)
-
-        assert result.submitted is True
-        assert result.assistant_message == fake_response["assistant_message"]
-        assert len(result.updated_tasks) == 1
-        assert result.updated_tasks[0].id == 3
-        assert result.updated_tasks[0].scheduled_date == "2026-08-24"
-        assert submitted == [("sched-1", fake_response["updated_tasks"])]
-
-    def test_be_submission_failure_does_not_raise(self, monkeypatch):
-        fake_response = {
-            "assistant_message": "이건 무시돼야 함",
-            "updated_tasks": [
-                {
-                    "id": 3,
-                    "scheduled_date": "2026-08-24",
-                    "title": "달력 컴포넌트 연결",
-                    "description": "달력 컴포넌트 연결",
-                    "estimated_min": 50,
-                }
-            ],
-        }
-        monkeypatch.setattr(service, "generate_structured", lambda **kwargs: fake_response)
-        monkeypatch.setattr(service.be_client, "notify_conversation", lambda *a, **k: None)
-
-        def _raise(*args, **kwargs):
-            raise httpx.HTTPError("boom")
-
-        monkeypatch.setattr(service.be_client, "update_scheduled_tasks", _raise)
-
-        req = PlanRescheduleRequest(
-            conversation_id="conv-1",
-            schedule_id="sched-1",
-            goal_summary="AI 확정 학습 계획",
-            category="학습",
-            template_answers=_template_answers(start_date="2026-08-15", end_date="2026-08-31"),
-            tasks=self._tasks(),
-            user_message="달력 컴포넌트 연결을 8월 24일로 옮겨줘",
-        )
-        result = service.reschedule_plan(req)
-
-        assert result.submitted is False
-        assert "문제" in result.assistant_message
-
-    def test_no_changes_returns_empty_updated_tasks_and_submitted_true(self, monkeypatch):
-        fake_response = {"assistant_message": "요청하신 대로 바뀔 게 없었어요.", "updated_tasks": []}
         monkeypatch.setattr(service, "generate_structured", lambda **kwargs: fake_response)
         monkeypatch.setattr(service.be_client, "notify_conversation", lambda *a, **k: None)
         submit_calls = []
@@ -542,6 +480,29 @@ class TestReschedulePlan:
             "update_scheduled_tasks",
             lambda schedule_id, tasks: submit_calls.append((schedule_id, tasks)),
         )
+
+        req = PlanRescheduleRequest(
+            conversation_id="conv-1",
+            schedule_id="sched-1",
+            goal_summary="AI 확정 학습 계획",
+            category="학습",
+            template_answers=_template_answers(start_date="2026-08-15", end_date="2026-08-31"),
+            tasks=self._tasks(),
+            user_message="달력 컴포넌트 연결을 8월 24일로 옮겨줘",
+        )
+        result = service.reschedule_plan(req)
+
+        assert result.ready_to_confirm is True
+        assert result.assistant_message == fake_response["assistant_message"]
+        assert len(result.updated_tasks) == 1
+        assert result.updated_tasks[0].id == 3
+        assert result.updated_tasks[0].scheduled_date == "2026-08-24"
+        assert submit_calls == []  # 제안 단계에서는 BE 호출이 없어야 함
+
+    def test_no_changes_returns_empty_updated_tasks(self, monkeypatch):
+        fake_response = {"assistant_message": "요청하신 대로 바뀔 게 없었어요.", "updated_tasks": []}
+        monkeypatch.setattr(service, "generate_structured", lambda **kwargs: fake_response)
+        monkeypatch.setattr(service.be_client, "notify_conversation", lambda *a, **k: None)
 
         req = PlanRescheduleRequest(
             conversation_id="conv-1",
@@ -554,12 +515,12 @@ class TestReschedulePlan:
         )
         result = service.reschedule_plan(req)
 
-        assert result.submitted is True
+        assert result.ready_to_confirm is True
         assert result.updated_tasks == []
 
-    def test_rejects_update_pushing_incomplete_task_beyond_30_days(self, monkeypatch):
+    def test_rejects_proposal_pushing_incomplete_task_beyond_30_days(self, monkeypatch):
         fake_response = {
-            "assistant_message": "기간을 늘려서 옮겼어요.",
+            "assistant_message": "기간을 늘려서 옮길게요.",
             "updated_tasks": [
                 {
                     "id": 3,
@@ -572,12 +533,6 @@ class TestReschedulePlan:
         }
         monkeypatch.setattr(service, "generate_structured", lambda **kwargs: fake_response)
         monkeypatch.setattr(service.be_client, "notify_conversation", lambda *a, **k: None)
-        submit_calls = []
-        monkeypatch.setattr(
-            service.be_client,
-            "update_scheduled_tasks",
-            lambda schedule_id, tasks: submit_calls.append((schedule_id, tasks)),
-        )
 
         req = PlanRescheduleRequest(
             conversation_id="conv-1",
@@ -590,10 +545,72 @@ class TestReschedulePlan:
         )
         result = service.reschedule_plan(req)
 
-        assert result.submitted is False
+        assert result.ready_to_confirm is False
         assert result.updated_tasks == []
         assert "30" in result.assistant_message
-        assert submit_calls == []
+
+
+class TestConfirmReschedule:
+    def test_submits_updated_tasks_to_be(self, monkeypatch):
+        submitted = []
+        monkeypatch.setattr(
+            service.be_client,
+            "update_scheduled_tasks",
+            lambda schedule_id, tasks: submitted.append((schedule_id, tasks)),
+        )
+
+        req = PlanRescheduleConfirmRequest(
+            schedule_id="sched-1",
+            updated_tasks=[
+                RescheduledTaskUpdate(
+                    id=3,
+                    scheduled_date="2026-08-24",
+                    title="달력 컴포넌트 연결",
+                    description="달력 컴포넌트 연결",
+                    estimated_min=50,
+                )
+            ],
+        )
+        result = service.confirm_reschedule(req)
+
+        assert result.submitted is True
+        assert result.schedule_id == "sched-1"
+        assert submitted == [
+            (
+                "sched-1",
+                [
+                    {
+                        "id": 3,
+                        "scheduled_date": "2026-08-24",
+                        "title": "달력 컴포넌트 연결",
+                        "description": "달력 컴포넌트 연결",
+                        "estimated_min": 50,
+                    }
+                ],
+            )
+        ]
+
+    def test_be_submission_failure_propagates(self, monkeypatch):
+        def _raise(*args, **kwargs):
+            raise httpx.HTTPError("boom")
+
+        monkeypatch.setattr(service.be_client, "update_scheduled_tasks", _raise)
+
+        req = PlanRescheduleConfirmRequest(
+            schedule_id="sched-1",
+            updated_tasks=[
+                RescheduledTaskUpdate(
+                    id=3,
+                    scheduled_date="2026-08-24",
+                    title="달력 컴포넌트 연결",
+                    description="달력 컴포넌트 연결",
+                    estimated_min=50,
+                )
+            ],
+        )
+
+        with pytest.raises(httpx.HTTPError):
+            service.confirm_reschedule(req)
 
 
 class TestConfirmPlan:

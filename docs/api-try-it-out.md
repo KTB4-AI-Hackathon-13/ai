@@ -125,17 +125,18 @@ curl -X POST http://127.0.0.1:8000/plan/confirm \
 
 ---
 
-## 5. POST /plan/reschedule (신규)
+## 5. POST /plan/reschedule + POST /plan/reschedule/confirm (신규)
 
-**이미 캘린더에 확정되어 올라간 계획**을 사용자가 다시 고치고 싶을 때 쓰는 엔드포인트.
-`/plan/revise`와 달리 대화(되묻기)가 없고, **한 번의 요청으로 바로 BE에 반영**까지 끝난다.
-전체 계획을 다시 보내는 게 아니라, **실제로 바뀐 태스크만 diff로 반환**해서 BE에 그 변경분만
-전송한다.
+**이미 캘린더에 확정되어 올라간 계획**을 사용자가 다시 고치고 싶을 때 쓰는 두 단계 엔드포인트.
+`/plan/revise`처럼 여러 턴 대화는 안 하지만, **제안(reschedule) → 승인(confirm)** 두 번의
+호출로 나뉜다. 전체 계획을 다시 보내는 게 아니라, **실제로 바뀐 태스크만 diff로 다룬다.**
 
 `tasks`엔 이 스케줄(목표 하나)에 속한 **완료 + 미완료 태스크 전체**를 넣는다(BE의
 `GET /schedules/{scheduleId}` 응답을 그대로 매핑하면 됨). `completed`는 BE의
 `completedAt != null`과 동일 — completed=true인 태스크는 AI가 절대 건드리지 않고
 문맥 파악용으로만 참고한다.
+
+### 5-1. POST /plan/reschedule — 제안만 받기 (BE에 아직 반영 안 됨)
 
 ```bash
 curl -X POST http://127.0.0.1:8000/plan/reschedule \
@@ -162,22 +163,45 @@ curl -X POST http://127.0.0.1:8000/plan/reschedule \
 
 ```json
 {
-  "assistant_message": "달력 컴포넌트 연결 일정을 8월 24일로 이동해서 캘린더에 반영했어요.",
+  "assistant_message": "달력 컴포넌트 연결 일정을 8월 24일로 옮길게요.",
   "updated_tasks": [
     {"id": 110323, "scheduled_date": "2026-08-24", "title": "달력 컴포넌트 연결", "description": "달력 컴포넌트 연결", "estimated_min": 50}
   ],
-  "submitted": true
+  "ready_to_confirm": true
 }
 ```
 
-- `updated_tasks`엔 **실제로 바뀐 태스크만** 담긴다 — 안 바뀐 나머지(예: 미니 프로젝트
+- `updated_tasks`엔 **실제로 바뀔 태스크만** 담긴다 — 안 바뀐 나머지(예: 미니 프로젝트
   구현)는 응답에 아예 안 나온다. 바뀐 게 없으면 빈 배열.
 - 순수 날짜 이동만 요청하면 `title`/`description`/`estimated_min`은 원래 값 그대로 유지된 채
   `scheduled_date`만 바뀐다. 난이도 조정처럼 내용 자체를 바꿔달라고 하면 그 값들도 같이 바뀐다.
 - `id`는 항상 요청 `tasks`에 있던 기존 id를 그대로 사용한다 — 새 태스크를 만들어내지 않는다.
-- `submitted: true`면 `updated_tasks`가 BE(`PATCH /internal/ai/schedules/{schedule_id}/plan/tasks`)에
-  전송 완료된 상태다(빈 배열이면 전송 자체를 안 하고 그냥 true). `false`면 30일 상한 초과 또는
-  BE 전송 실패라 캘린더엔 반영 안 됨(`assistant_message`에 이유가 담긴다).
+- 이 호출만으로는 **BE에 아무것도 전송되지 않는다.** `ready_to_confirm: false`면 30일 상한
+  초과 등으로 이 제안 자체가 확정 불가능하다는 뜻(`updated_tasks`도 빈 배열).
+
+### 5-2. POST /plan/reschedule/confirm — 승인된 제안을 실제로 반영
+
+사용자가 위 `updated_tasks`를 보고 승인하면, **받았던 그 값을 그대로** 다시 실어 보낸다.
+
+```bash
+curl -X POST http://127.0.0.1:8000/plan/reschedule/confirm \
+  -H "Content-Type: application/json" \
+  -d '{
+    "schedule_id": "6509",
+    "updated_tasks": [
+      {"id": 110323, "scheduled_date": "2026-08-24", "title": "달력 컴포넌트 연결", "description": "달력 컴포넌트 연결", "estimated_min": 50}
+    ]
+  }'
+```
+
+```json
+{ "submitted": true, "schedule_id": "6509" }
+```
+
+이 호출이 실제로 BE(`PATCH /internal/ai/schedules/{schedule_id}/plan/tasks`)에 변경분을
+전송한다. 실패하면 502로 에러가 나서(다른 confirm류 엔드포인트와 동일하게 예외를 그대로
+올림) FE가 재시도를 안내할 수 있다. 이 서비스는 상태가 없어서 직전 제안을 기억하지 않으니,
+5-1에서 받은 `updated_tasks`를 호출자가 들고 있다가 그대로 다시 보내야 한다.
 
 ---
 
@@ -189,4 +213,4 @@ curl -X POST http://127.0.0.1:8000/plan/reschedule \
 `scheduled_date` 기준으로 같은 규칙이 적용된다(이 경우 `current_plan`이 그대로 유지된
 채 응답된다). `/plan/reschedule`은 `tasks` 중 completed=false인 것들의 (수정 반영 후)
 가장 늦은 날짜 기준으로 같은 규칙이 적용되고, 초과 시 `updated_tasks: []` +
-`submitted: false`로 돌아온다(BE 전송 자체가 안 일어남).
+`ready_to_confirm: false`로 돌아온다(이 제안은 confirm으로 넘길 수 없다).
