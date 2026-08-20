@@ -263,11 +263,16 @@ class TestRevisePlan:
         }
         monkeypatch.setattr(service, "generate_structured", lambda **kwargs: fake_response)
         monkeypatch.setattr(service.be_client, "notify_conversation", lambda *a, **k: None)
-        submit_calls = []
+        created_calls, updated_calls = [], []
         monkeypatch.setattr(
             service.be_client,
-            "submit_final_plan",
-            lambda schedule_id, plan: submit_calls.append((schedule_id, plan)),
+            "create_plan_tasks",
+            lambda schedule_id, summary, tasks: created_calls.append((schedule_id, summary, tasks)),
+        )
+        monkeypatch.setattr(
+            service.be_client,
+            "update_plan_tasks",
+            lambda schedule_id, summary, tasks: updated_calls.append((schedule_id, summary, tasks)),
         )
 
         current_plan = SchedulePlan(summary="기존 플랜", daily_tasks=[])
@@ -286,7 +291,8 @@ class TestRevisePlan:
         assert result.ready_to_confirm is False
         assert result.plan == current_plan
         assert "30" in result.assistant_message
-        assert submit_calls == []
+        assert created_calls == []
+        assert updated_calls == []
 
     def test_accepts_revised_plan_within_30_days(self, monkeypatch):
         fake_response = {
