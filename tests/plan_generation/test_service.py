@@ -98,6 +98,7 @@ class TestGeneratePlan:
 
         assert result.assistant_message == fake_response["assistant_message"]
         assert result.plan.summary == fake_response["summary"]
+        assert result.feedback_history == []
         assert len(result.plan.daily_tasks) == 1
         assert result.ready_to_confirm is True
         assert [role for _, role, _ in notified] == ["user", "assistant"]
@@ -245,6 +246,32 @@ class TestRevisePlan:
         assert result.confirmed is False
         assert result.submitted is None
         assert result.plan.summary == fake_response["summary"]
+        assert result.feedback_history == ["주말엔 시간이 없어요"]
+
+    def test_accumulates_feedback_history_across_turns(self, monkeypatch):
+        fake_response = {
+            "assistant_message": "강도를 낮춰서 다시 짰어요.",
+            "summary": "저강도 플랜",
+            "daily_tasks": [],
+            "ready_to_confirm": False,
+            "user_confirmed": False,
+        }
+        monkeypatch.setattr(service, "generate_structured", lambda **kwargs: fake_response)
+        monkeypatch.setattr(service.be_client, "notify_conversation", lambda *a, **k: None)
+
+        req = PlanReviseRequest(
+            conversation_id="conv-1",
+            schedule_id="sched-1",
+            goal_summary="근육을 만들고 싶어",
+            category="운동",
+            template_answers=_template_answers(),
+            current_plan=SchedulePlan(summary="기존 플랜", daily_tasks=[]),
+            feedback_history=["주말엔 시간이 없어요"],
+            user_message="강도도 좀 낮춰주세요",
+        )
+        result = service.revise_plan(req)
+
+        assert result.feedback_history == ["주말엔 시간이 없어요", "강도도 좀 낮춰주세요"]
 
     def test_rejects_revised_plan_exceeding_30_days(self, monkeypatch):
         fake_response = {
@@ -283,12 +310,14 @@ class TestRevisePlan:
             category="운동",
             template_answers=_template_answers(start_date="2026-08-20", end_date="2026-08-29"),
             current_plan=current_plan,
+            feedback_history=["주말엔 시간이 없어요"],
             user_message="기간 한 달 더 늘려줘",
         )
         result = service.revise_plan(req)
 
         assert result.confirmed is False
         assert result.ready_to_confirm is False
+        assert result.feedback_history == ["주말엔 시간이 없어요", "기간 한 달 더 늘려줘"]
         assert result.plan == current_plan
         assert "30" in result.assistant_message
         assert created_calls == []

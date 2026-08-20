@@ -83,12 +83,13 @@ def _split_tasks_by_id(plan: SchedulePlan) -> tuple[list[dict], list[dict]]:
     return created, updated
 
 
-def _turn_result_to_response(data: dict) -> PlanTurnResponse:
+def _turn_result_to_response(data: dict, feedback_history: list[str]) -> PlanTurnResponse:
     plan = SchedulePlan(summary=data["summary"], daily_tasks=data["daily_tasks"])
     return PlanTurnResponse(
         assistant_message=data["assistant_message"],
         plan=plan,
         ready_to_confirm=data["ready_to_confirm"],
+        feedback_history=feedback_history,
     )
 
 
@@ -106,6 +107,7 @@ def generate_plan(req: PlanGenerateRequest) -> PlanTurnResponse:
             assistant_message=message,
             plan=SchedulePlan(summary="", daily_tasks=[]),
             ready_to_confirm=False,
+            feedback_history=[],
         )
 
     data = generate_structured(
@@ -115,7 +117,7 @@ def generate_plan(req: PlanGenerateRequest) -> PlanTurnResponse:
         schema_name="plan_turn",
     )
 
-    result = _turn_result_to_response(data)
+    result = _turn_result_to_response(data, feedback_history=[])
     be_client.notify_conversation(req.conversation_id, role="user", content=req.goal_summary)
     be_client.notify_conversation(req.conversation_id, role="assistant", content=result.assistant_message)
     return result
@@ -123,6 +125,8 @@ def generate_plan(req: PlanGenerateRequest) -> PlanTurnResponse:
 
 def revise_plan(req: PlanReviseRequest) -> PlanTurnResponse:
     _require_date_range(req.template_answers)
+
+    feedback_history = req.feedback_history + [req.user_message]
 
     data = generate_structured(
         system_prompt=PLAN_REVISE_SYSTEM,
@@ -142,6 +146,7 @@ def revise_plan(req: PlanReviseRequest) -> PlanTurnResponse:
             plan=req.current_plan,
             ready_to_confirm=False,
             confirmed=False,
+            feedback_history=feedback_history,
         )
 
     if data["user_confirmed"]:
@@ -158,9 +163,10 @@ def revise_plan(req: PlanReviseRequest) -> PlanTurnResponse:
             ready_to_confirm=True,
             confirmed=True,
             submitted=submitted,
+            feedback_history=feedback_history,
         )
 
-    result = _turn_result_to_response(data)
+    result = _turn_result_to_response(data, feedback_history=feedback_history)
     be_client.notify_conversation(req.conversation_id, role="assistant", content=result.assistant_message)
     return result
 

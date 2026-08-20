@@ -89,6 +89,10 @@ class PlanReviseRequest(BaseModel):
         "남아있는 각 태스크는 BE 쪽 기존 id를 담고 있어야 한다(생성/수정 구분의 기준이 된다).",
     )
     user_message: str = Field(..., description="계획에 대한 사용자의 수정 요청/피드백 자유 텍스트")
+    feedback_history: List[str] = Field(
+        default_factory=list,
+        description="직전 턴들의 사용자 피드백 원문 목록 (이번 턴의 user_message는 미포함, 오래된 순)",
+    )
     busy_dates: List[BusyDate] = Field(default_factory=list)
 
 
@@ -103,6 +107,10 @@ class PlanTurnResponse(BaseModel):
     confirmed: bool = Field(False, description="이번 턴에 사용자가 확정 의사를 밝혔는지 여부")
     submitted: Optional[bool] = Field(
         None, description="confirmed=True일 때만 의미 있음 — BE로 최종 계획 전송이 성공했는지 여부"
+    )
+    feedback_history: List[str] = Field(
+        default_factory=list,
+        description="이번 턴까지 누적된 사용자 피드백 원문 목록. 다음 요청에 그대로 다시 실어 보내면 됨",
     )
 
 
