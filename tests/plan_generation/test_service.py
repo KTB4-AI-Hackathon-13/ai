@@ -371,14 +371,36 @@ class TestRevisePlan:
         }
         monkeypatch.setattr(service, "generate_structured", lambda **kwargs: fake_response)
         monkeypatch.setattr(service.be_client, "notify_conversation", lambda *a, **k: None)
-        submitted = []
+        created_calls, updated_calls = [], []
         monkeypatch.setattr(
             service.be_client,
-            "submit_final_plan",
-            lambda schedule_id, plan: submitted.append((schedule_id, plan)),
+            "create_plan_tasks",
+            lambda schedule_id, summary, tasks: created_calls.append((schedule_id, summary, tasks)),
+        )
+        monkeypatch.setattr(
+            service.be_client,
+            "update_plan_tasks",
+            lambda schedule_id, summary, tasks: updated_calls.append((schedule_id, summary, tasks)),
         )
 
-        current_plan = SchedulePlan(summary="기존 플랜", daily_tasks=[])
+        current_plan = SchedulePlan(
+            summary="기존 플랜",
+            daily_tasks=[
+                {
+                    "id": "task-1",
+                    "scheduled_date": "2026-08-20",
+                    "title": "하체 운동",
+                    "description": "스쿼트 3세트 x 12회",
+                    "estimated_min": 30,
+                },
+                {
+                    "scheduled_date": "2026-08-21",
+                    "title": "상체 운동",
+                    "description": "벤치프레스 3세트 x 12회",
+                    "estimated_min": 30,
+                },
+            ],
+        )
         req = PlanReviseRequest(
             conversation_id="conv-1",
             schedule_id="sched-1",
@@ -393,7 +415,8 @@ class TestRevisePlan:
         assert result.confirmed is True
         assert result.submitted is True
         assert result.plan == current_plan
-        assert submitted == [("sched-1", current_plan.model_dump())]
+        assert created_calls == [("sched-1", "기존 플랜", [current_plan.daily_tasks[1].model_dump()])]
+        assert updated_calls == [("sched-1", "기존 플랜", [current_plan.daily_tasks[0].model_dump()])]
 
     def test_user_confirmed_but_be_submission_fails_does_not_raise(self, monkeypatch):
         fake_response = {
@@ -409,7 +432,8 @@ class TestRevisePlan:
         def _raise(*args, **kwargs):
             raise httpx.HTTPError("boom")
 
-        monkeypatch.setattr(service.be_client, "submit_final_plan", _raise)
+        monkeypatch.setattr(service.be_client, "create_plan_tasks", _raise)
+        monkeypatch.setattr(service.be_client, "update_plan_tasks", lambda *a, **k: None)
 
         req = PlanReviseRequest(
             conversation_id="conv-1",
@@ -428,20 +452,71 @@ class TestRevisePlan:
 
 class TestConfirmPlan:
     def test_submits_plan_and_echoes_schedule_id(self, monkeypatch):
-        submitted = []
+        created_calls, updated_calls = [], []
         monkeypatch.setattr(
             service.be_client,
-            "submit_final_plan",
-            lambda schedule_id, plan: submitted.append((schedule_id, plan)),
+            "create_plan_tasks",
+            lambda schedule_id, summary, tasks: created_calls.append((schedule_id, summary, tasks)),
+        )
+        monkeypatch.setattr(
+            service.be_client,
+            "update_plan_tasks",
+            lambda schedule_id, summary, tasks: updated_calls.append((schedule_id, summary, tasks)),
         )
 
         req = PlanConfirmRequest(
             conversation_id="conv-1",
             schedule_id="sched-1",
-            plan=SchedulePlan(summary="최종 플랜", daily_tasks=[]),
+            plan=SchedulePlan(
+                summary="최종 플랜",
+                daily_tasks=[
+                    {
+                        "id": "task-9",
+                        "scheduled_date": "2026-08-20",
+                        "title": "하체 운동",
+                        "description": "스쿼트 3세트 x 12회",
+                        "estimated_min": 30,
+                    },
+                    {
+                        "scheduled_date": "2026-08-21",
+                        "title": "상체 운동",
+                        "description": "벤치프레스 3세트 x 12회",
+                        "estimated_min": 30,
+                    },
+                ],
+            ),
         )
         result = service.confirm_plan(req)
 
         assert result.submitted is True
         assert result.schedule_id == "sched-1"
-        assert submitted == [("sched-1", {"summary": "최종 플랜", "daily_tasks": []})]
+        assert created_calls == [
+            (
+                "sched-1",
+                "최종 플랜",
+                [
+                    {
+                        "id": None,
+                        "scheduled_date": "2026-08-21",
+                        "title": "상체 운동",
+                        "description": "벤치프레스 3세트 x 12회",
+                        "estimated_min": 30,
+                    }
+                ],
+            )
+        ]
+        assert updated_calls == [
+            (
+                "sched-1",
+                "최종 플랜",
+                [
+                    {
+                        "id": "task-9",
+                        "scheduled_date": "2026-08-20",
+                        "title": "하체 운동",
+                        "description": "스쿼트 3세트 x 12회",
+                        "estimated_min": 30,
+                    }
+                ],
+            )
+        ]

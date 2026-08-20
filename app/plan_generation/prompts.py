@@ -34,6 +34,8 @@ PLAN_GENERATE_SYSTEM = """\
    이번엔 더 가볍게 시작하고, preferences에 누적된 제약은 별다른 언급이 없어도 계속 지킨다.
    long_term_context가 없거나 past_goals/preferences가 모두 비어있으면 무시하고 기존 방식대로
    진행한다.
+8. 모든 daily_task의 id는 반드시 null로 둔다 — 아직 캘린더에 아무것도 생성되지 않은
+   최초 계획이므로 기존 태스크가 있을 수 없다.
 """
 
 PLAN_REVISE_SYSTEM = """\
@@ -66,4 +68,10 @@ PLAN_REVISE_SYSTEM = """\
    있다. current_plan에 없는 날짜는 이미 완료되었거나 사용자가 다루지 않기로 한 부분이니
    새로 만들어내거나 채워 넣지 않는다. user_message가 특정 날짜 구간만 지목하면 그 구간만
    조정하고, current_plan에 있는 나머지 날짜는 그대로 유지한다.
+8. daily_task의 id는 BE가 이미 생성/수정 대상을 구분하는 데 쓰므로 정확히 다뤄야 한다.
+   current_plan의 어떤 태스크와 대응되는 태스크(날짜를 옮기거나 내용을 살짝 고친 경우 포함)는
+   반드시 current_plan에 있던 그 태스크의 id를 그대로 유지한다. 반면 원래 current_plan에
+   없던 완전히 새로운 태스크를 만들어 끼워 넣는 경우(예: 빈 날짜를 채우거나 기간을 늘림)에는
+   id를 반드시 null로 설정한다. id를 임의로 새로 지어내거나 다른 태스크의 id를 재사용하지
+   않는다.
 """

@@ -75,6 +75,14 @@ def _revised_duration_days(start_date: str, daily_tasks: list[dict]) -> int | No
     return _days_between_inclusive(start_date, latest)
 
 
+def _split_tasks_by_id(plan: SchedulePlan) -> tuple[list[dict], list[dict]]:
+    """id가 없는 태스크(신규 생성 대상)와 있는 태스크(기존 수정 대상)를 나눈다."""
+    created, updated = [], []
+    for task in plan.daily_tasks:
+        (updated if task.id else created).append(task.model_dump())
+    return created, updated
+
+
 def _turn_result_to_response(data: dict) -> PlanTurnResponse:
     plan = SchedulePlan(summary=data["summary"], daily_tasks=data["daily_tasks"])
     return PlanTurnResponse(
@@ -158,8 +166,10 @@ def revise_plan(req: PlanReviseRequest) -> PlanTurnResponse:
 
 
 def _try_submit_final_plan(schedule_id: str, plan: SchedulePlan) -> bool:
+    created, updated = _split_tasks_by_id(plan)
     try:
-        be_client.submit_final_plan(schedule_id, plan.model_dump())
+        be_client.create_plan_tasks(schedule_id, plan.summary, created)
+        be_client.update_plan_tasks(schedule_id, plan.summary, updated)
         return True
     except httpx.HTTPError as exc:
         logger.warning("확정 계획 BE 전송 실패(대화는 계속 진행): %s", exc)
@@ -167,5 +177,7 @@ def _try_submit_final_plan(schedule_id: str, plan: SchedulePlan) -> bool:
 
 
 def confirm_plan(req: PlanConfirmRequest) -> PlanConfirmResponse:
-    be_client.submit_final_plan(req.schedule_id, req.plan.model_dump())
+    created, updated = _split_tasks_by_id(req.plan)
+    be_client.create_plan_tasks(req.schedule_id, req.plan.summary, created)
+    be_client.update_plan_tasks(req.schedule_id, req.plan.summary, updated)
     return PlanConfirmResponse(submitted=True, schedule_id=req.schedule_id)

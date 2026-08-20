@@ -22,6 +22,12 @@ class BusyDate(BaseModel):
 
 
 class DailyTask(BaseModel):
+    id: Optional[str] = Field(
+        None,
+        description="BE 쪽 기존 태스크 ID. 이미 캘린더에 올라가 있는 태스크를 그대로 유지하거나 "
+        "수정하는 경우에만 채워진다(그 값은 current_plan에서 그대로 가져온 것). "
+        "새로 만들어내는 태스크는 반드시 null — 확정 시 BE가 이 값의 유무로 생성/수정 대상을 나눈다.",
+    )
     scheduled_date: str = Field(..., description="YYYY-MM-DD. 이 작업을 배치한 실제 날짜")
     title: str
     description: str
@@ -77,7 +83,11 @@ class PlanReviseRequest(BaseModel):
     goal_summary: str
     category: str = Field(..., min_length=1)
     template_answers: dict
-    current_plan: SchedulePlan = Field(..., description="직전 턴에서 사용자에게 보여준 계획")
+    current_plan: SchedulePlan = Field(
+        ...,
+        description="직전 턴에서 사용자에게 보여준 계획. 이미 완료된 날짜는 빠져 있을 수 있고, "
+        "남아있는 각 태스크는 BE 쪽 기존 id를 담고 있어야 한다(생성/수정 구분의 기준이 된다).",
+    )
     user_message: str = Field(..., description="계획에 대한 사용자의 수정 요청/피드백 자유 텍스트")
     busy_dates: List[BusyDate] = Field(default_factory=list)
 
@@ -114,12 +124,13 @@ class PlanConfirmResponse(BaseModel):
 _DAILY_TASK_SCHEMA = {
     "type": "object",
     "properties": {
+        "id": {"type": ["string", "null"]},
         "scheduled_date": {"type": "string"},
         "title": {"type": "string"},
         "description": {"type": "string"},
         "estimated_min": {"type": "integer"},
     },
-    "required": ["scheduled_date", "title", "description", "estimated_min"],
+    "required": ["id", "scheduled_date", "title", "description", "estimated_min"],
     "additionalProperties": False,
 }
 
