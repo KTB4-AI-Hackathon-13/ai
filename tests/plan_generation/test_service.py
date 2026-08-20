@@ -168,6 +168,55 @@ class TestGeneratePlan:
         assert "마라톤" in captured["user_content"]
         assert "아침엔 시간 없음" in captured["user_content"]
 
+    def test_rejects_period_over_30_days_without_calling_llm(self, monkeypatch):
+        llm_calls = []
+        monkeypatch.setattr(
+            service, "generate_structured", lambda **kwargs: llm_calls.append(kwargs) or {}
+        )
+        notified = []
+        monkeypatch.setattr(
+            service.be_client,
+            "notify_conversation",
+            lambda conversation_id, role, content: notified.append((conversation_id, role, content)),
+        )
+
+        req = PlanGenerateRequest(
+            conversation_id="conv-1",
+            schedule_id="sched-1",
+            goal_summary="10km 마라톤 완주하기",
+            category="운동",
+            template_answers=_template_answers(start_date="2026-08-01", end_date="2026-08-31"),
+        )
+        result = service.generate_plan(req)
+
+        assert llm_calls == []
+        assert result.ready_to_confirm is False
+        assert result.plan.daily_tasks == []
+        assert "30" in result.assistant_message
+        assert [role for _, role, _ in notified] == ["user", "assistant"]
+
+    def test_accepts_period_of_exactly_30_days(self, monkeypatch):
+        fake_response = {
+            "assistant_message": "30일짜리 계획을 만들었어요.",
+            "summary": "30일 플랜",
+            "daily_tasks": [],
+            "ready_to_confirm": True,
+            "user_confirmed": False,
+        }
+        monkeypatch.setattr(service, "generate_structured", lambda **kwargs: fake_response)
+        monkeypatch.setattr(service.be_client, "notify_conversation", lambda *a, **k: None)
+
+        req = PlanGenerateRequest(
+            conversation_id="conv-1",
+            schedule_id="sched-1",
+            goal_summary="10km 마라톤 완주하기",
+            category="운동",
+            template_answers=_template_answers(start_date="2026-08-01", end_date="2026-08-30"),
+        )
+        result = service.generate_plan(req)
+
+        assert result.assistant_message == fake_response["assistant_message"]
+
 
 class TestRevisePlan:
     def test_builds_revised_plan_from_llm_response(self, monkeypatch):

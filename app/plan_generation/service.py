@@ -25,6 +25,9 @@ class InvalidDateRange(Exception):
     """template_answers의 start_date/end_date가 없거나 형식/순서가 잘못됐을 때."""
 
 
+MAX_PLAN_DURATION_DAYS = 30
+
+
 def _days_between_inclusive(start_str: str, end_str: str) -> int:
     try:
         start = date.fromisoformat(str(start_str))
@@ -48,6 +51,13 @@ def _require_date_range(template_answers: dict) -> None:
     _days_between_inclusive(start_date, end_date)
 
 
+def _plan_duration_exceeded_message(days: int) -> str:
+    return (
+        f"목표 기간은 최대 {MAX_PLAN_DURATION_DAYS}일까지 설정할 수 있어요. "
+        f"요청하신 기간은 {days}일이에요. 시작일과 종료일을 다시 알려주시겠어요?"
+    )
+
+
 def _turn_result_to_response(data: dict) -> PlanTurnResponse:
     plan = SchedulePlan(summary=data["summary"], daily_tasks=data["daily_tasks"])
     return PlanTurnResponse(
@@ -59,6 +69,19 @@ def _turn_result_to_response(data: dict) -> PlanTurnResponse:
 
 def generate_plan(req: PlanGenerateRequest) -> PlanTurnResponse:
     _require_date_range(req.template_answers)
+
+    days = _days_between_inclusive(
+        req.template_answers["start_date"], req.template_answers["end_date"]
+    )
+    if days > MAX_PLAN_DURATION_DAYS:
+        message = _plan_duration_exceeded_message(days)
+        be_client.notify_conversation(req.conversation_id, role="user", content=req.goal_summary)
+        be_client.notify_conversation(req.conversation_id, role="assistant", content=message)
+        return PlanTurnResponse(
+            assistant_message=message,
+            plan=SchedulePlan(summary="", daily_tasks=[]),
+            ready_to_confirm=False,
+        )
 
     data = generate_structured(
         system_prompt=PLAN_GENERATE_SYSTEM,
