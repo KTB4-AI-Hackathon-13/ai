@@ -16,16 +16,18 @@ GEMINI_API_KEY를 채워 넣는 것을 전제로 한다 — 코드/폴백 순서
 스키마 요구사항이 같아서, 호출 지점에서 같은 raw JSON Schema(schemas.py)를 그대로
 재사용할 수 있다.
 
-Gemini는 공식 google-genai SDK 대신 REST API를 httpx로 직접 호출한다 — google-genai가
-요구하는 websockets<17이 dennis가 고정해둔 websockets==17.0.1과 충돌하기 때문이다.
+Gemini는 공식 google-genai SDK를 쓴다. response_schema(OpenAPI 3.0 서브셋)는
+additionalProperties 등을 지원하지 않아 우리 strict 스키마를 못 받으므로,
+표준 JSON Schema를 그대로 받는 response_json_schema를 대신 사용한다.
 """
 
 import json
 import logging
 import os
 
-import httpx
 from cerebras.cloud.sdk import Cerebras
+from google import genai
+from google.genai import types
 from groq import Groq
 
 logger = logging.getLogger(__name__)
@@ -44,22 +46,17 @@ def _call_gemini(system_prompt: str, user_content: str, json_schema: dict, schem
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY not set")
 
-    response = httpx.post(
-        f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent",
-        headers={"x-goog-api-key": api_key},
-        json={
-            "system_instruction": {"parts": [{"text": system_prompt}]},
-            "contents": [{"role": "user", "parts": [{"text": user_content}]}],
-            "generationConfig": {
-                "response_mime_type": "application/json",
-                "response_schema": json_schema,
-            },
-        },
-        timeout=30.0,
+    client = genai.Client(api_key=api_key)
+    response = client.models.generate_content(
+        model=GEMINI_MODEL,
+        contents=user_content,
+        config=types.GenerateContentConfig(
+            system_instruction=system_prompt,
+            response_mime_type="application/json",
+            response_json_schema=json_schema,
+        ),
     )
-    response.raise_for_status()
-    text = response.json()["candidates"][0]["content"]["parts"][0]["text"]
-    return json.loads(text)
+    return json.loads(response.text)
 
 
 def _call_cerebras(system_prompt: str, user_content: str, json_schema: dict, schema_name: str) -> dict:
